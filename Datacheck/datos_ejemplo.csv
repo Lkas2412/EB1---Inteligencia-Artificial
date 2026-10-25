@@ -1,0 +1,13 @@
+id_cliente,nombre,correo,ciudad,fecha_registro,estado
+C001,Ana Torres,ana@example.com,Lima,2026-10-01,Activo
+C002,Carlos Paredes,carlos@example.com,Arequipa,2026-10-02,Activo
+C003,Lucía Gómez,,Trujillo,2026-10-03,Activo
+C004,Diego Salas,diego@example.com,,2026-10-04,Inactivo
+C005,"María López, Jr.",maria@example.com,Lima,2026-10-05,Activo
+C006,Pedro Ríos,pedro@example.com,Cusco,2026-10-06,Activo
+C007,Elena Ruiz,elena@example.com,Piura,2026-10-07,Activo
+C003,Lucía Gómez,,Trujillo,2026-10-03,Activo
+C008,Sara Núñez,sara@example.com,Lima,,Activo
+C009,Juan Vargas,juan@example.com,Chiclayo,2026-10-10,Inactivo
+C010,Julia Castro,julia@example.com,Lima,2026-10-11,Activo
+C006,Pedro Ríos,pedro@example.com,Cusco,2026-10-06,Activo

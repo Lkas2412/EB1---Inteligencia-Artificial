@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="DataCheck: analiza la calidad de tus archivos CSV directamente en el navegador." />
+  <title>DataCheck | Validador de calidad CSV</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="module" src="./src/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="./" aria-label="DataCheck, inicio">
+        <span class="brand-mark" aria-hidden="true">D<span>✓</span></span>
+        <span>DataCheck <small>CSV ANALYTICS</small></span>
+      </a>
+      <span class="top-pill"><span class="pulse"></span> 100 % en tu navegador</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero" aria-labelledby="app-title">
+      <div class="hero-content">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> CONTROL DE CALIDAD DE DATOS</div>
+        <h1 id="app-title">Encuentra errores en tus datos <span>antes de usarlos.</span></h1>
+        <p>Importa un archivo CSV y detecta valores vacíos y filas duplicadas en segundos. Revisa el detalle por columna y descarga un reporte.</p>
+        <div class="hero-features"><span>✓ Sin registros</span><span>✓ Sin instalar programas</span><span>✓ Datos privados</span></div>
+      </div>
+      <div class="hero-decoration" aria-hidden="true">
+        <div class="decor-card"><div class="decor-row"><span class="decor-icon">▦</span><span>Validación rápida</span><b>✓</b></div><div class="decor-meter"><i></i></div><div class="decor-list"><span></span><span></span><span></span></div></div>
+      </div>
+    </section>
+
+    <section class="upload-card" aria-labelledby="upload-title">
+      <div class="section-top">
+        <div><span class="section-index">01 / IMPORTACIÓN</span><h2 id="upload-title">Carga tu archivo</h2><p>Archivos .csv, máximo 5 MB. Se reconocen separadores coma, punto y coma y tabulación.</p></div>
+      </div>
+      <div id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Seleccionar o arrastrar un archivo CSV">
+        <div class="upload-icon" aria-hidden="true">↑</div>
+        <strong>Arrastra tu archivo CSV aquí</strong>
+        <span>o selecciónalo desde tu equipo</span>
+        <button id="selectBtn" type="button" class="button button-primary">Seleccionar archivo</button>
+        <input id="csvInput" type="file" accept=".csv,text/csv,text/plain" hidden />
+      </div>
+      <div class="upload-footer">
+        <div id="fileLabel" class="file-label"><span class="status-dot"></span> Ningún archivo cargado</div>
+        <div class="actions"><button id="demoBtn" class="button button-secondary" type="button">Usar datos de ejemplo</button><button id="resetBtn" class="button button-ghost" type="button" hidden>Limpiar</button></div>
+      </div>
+      <p id="message" class="message" role="status" aria-live="polite" hidden></p>
+    </section>
+
+    <section class="results" aria-labelledby="result-title">
+      <div class="section-top results-heading"><div><span class="section-index">02 / DIAGNÓSTICO</span><h2 id="result-title">Resumen de calidad</h2></div><button id="exportBtn" type="button" class="button button-primary" disabled>↓ Descargar informe CSV</button></div>
+      <div class="stats">
+        <article class="stat-card"><span>Registros analizados</span><strong id="statRows">—</strong><small>Total de filas de datos</small></article>
+        <article class="stat-card"><span>Columnas</span><strong id="statCols">—</strong><small>Campos detectados</small></article>
+        <article class="stat-card amber"><span>Celdas vacías</span><strong id="statBlanks">—</strong><small id="statBlanksSub">Pendiente de análisis</small></article>
+        <article class="stat-card coral"><span>Filas duplicadas</span><strong id="statDuplicates">—</strong><small>Repetidas después de la primera</small></article>
+      </div>
+      <div id="insight" class="insight" hidden><div class="insight-icon">i</div><p id="insightText"></p></div>
+    </section>
+
+    <div class="details-grid">
+      <section class="panel" aria-labelledby="columns-title"><div class="panel-heading"><div><span class="section-index">03 / COMPLETITUD</span><h2 id="columns-title">Calidad por columna</h2></div></div><div id="columnsList" class="columns-list"><p class="empty-state">Importa un archivo para visualizar el porcentaje de datos completos por columna.</p></div></section>
+      <section class="panel" aria-labelledby="preview-title"><div class="panel-heading"><div><span class="section-index">04 / REVISIÓN</span><h2 id="preview-title">Vista previa</h2></div><span id="previewCount" class="preview-count">Sin datos</span></div><div class="filters" role="group" aria-label="Filtrar registros"><button class="filter active" type="button" data-filter="all" aria-pressed="true">Todos</button><button class="filter" type="button" data-filter="incomplete" aria-pressed="false">Con vacíos</button><button class="filter" type="button" data-filter="duplicates" aria-pressed="false">Duplicados</button></div><div id="tableWrap" class="table-wrap"><p class="empty-state">Aquí podrás revisar una muestra de los registros del archivo.</p></div><p id="previewHelp" class="preview-help" hidden>Se muestran hasta 10 registros por filtro. Las celdas vacías aparecen resaltadas.</p></section>
+    </div>
+    <footer class="footer"><span><b>DataCheck</b> · Proyecto académico de Inteligencia Artificial</span><span>Los archivos se procesan localmente; no se envían a un servidor.</span></footer>
+  </main>
+</body>
+</html>
