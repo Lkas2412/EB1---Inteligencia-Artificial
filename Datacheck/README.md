@@ -90,7 +90,7 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 ### ⬇️ Exportación
 
 - **Informe CSV** con los indicadores generales, el puntaje y las estadísticas por columna (incluido el tipo detectado), listo para adjuntar a una entrega o compartir con el equipo.
-- **Copia del CSV sin filas duplicadas**, conservando la primera aparición de cada fila.
+- **CSV limpio con corrección guiada**: copia sin filas duplicadas exactas y, solo si marcas las opciones, también sin casi duplicadas ni registros vacíos, con los pseudo-vacíos convertidos en celdas vacías y las fechas normalizadas a `AAAA-MM-DD`. Ninguna corrección se aplica en silencio.
 - Ambas exportaciones **protegen las celdas que empiezan con `=`, `+`, `-`, `@`, `|` o `%`** para que no se ejecuten como fórmulas al abrirlas en una hoja de cálculo.
 
 ### 🎨 Experiencia
