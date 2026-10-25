@@ -304,6 +304,12 @@ test('Los pseudo-vacíos cuentan como dato ausente en el esquema', () => {
   assert.equal(validateSchema(a, { columns: { monto: { required: true } } }).total, 1);
 });
 
+test('La limpieza quita la fila que queda vacía tras convertir pseudo-vacíos', () => {
+  const a = analyzeCsv('n,m\nN/A,N/A\nAna,1');
+  const out = makeCleanCsv(a, { placeholdersToEmpty: true, removeEmptyRows: true });
+  assert.equal(out.split('\r\n').length, 2);
+});
+
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {
   const a = analyzeCsv('a,b,c\n,,\n1,2,3');
   assert.equal(a.rows.length, 2);

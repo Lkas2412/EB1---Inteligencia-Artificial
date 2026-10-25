@@ -398,13 +398,17 @@ function toIsoDate(value) {
 export function makeCleanCsv(analysis, options = {}) {
   let kept = analysis.rows.filter(row => !row.duplicate);
   if (options.removeNearDuplicates) kept = kept.filter(row => !row.nearDuplicate);
-  if (options.removeEmptyRows) kept = kept.filter(row => row.cells.some(cell => cell !== ''));
-  const lines = [analysis.headers, ...kept.map(row => row.cells.map(value => {
+  // Primero se transforman las celdas y DESPUÉS se quitan los registros
+  // vacíos: en el orden inverso, una fila de puros pseudo-vacíos
+  // sobrevivía como fila vacía aunque se marcaran ambas opciones.
+  const transformed = kept.map(row => row.cells.map(value => {
     let v = value;
     if (options.placeholdersToEmpty && PLACEHOLDER_VALUES.has(v.toLowerCase())) v = '';
     if (options.datesToIso && v !== '' && classifyCell(v) === 'fecha') v = toIsoDate(v);
     return v;
-  }))];
+  }));
+  const finalRows = options.removeEmptyRows ? transformed.filter(cells => cells.some(cell => cell !== '')) : transformed;
+  const lines = [analysis.headers, ...finalRows];
   return '\uFEFF' + lines.map(line => line.map(csvCell).join(analysis.delimiter)).join('\r\n');
 }
 
