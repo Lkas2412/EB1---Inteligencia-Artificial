@@ -26,6 +26,11 @@ Analistas de datos, estudiantes y personal administrativo que necesita revisar a
 7. Descargar un informe CSV con indicadores y estadísticas por columna.
 8. Restablecer el análisis para procesar otro archivo.
 9. Mostrar un error claro y limpiar los resultados anteriores si una nueva carga no es válida.
+10. Ver un **puntaje de calidad** global (0 a 100) que resume vacíos y duplicados.
+11. Detectar **filas irregulares** (con más o menos columnas que el encabezado), **celdas con espacios al inicio o al final** y **valores únicos por columna**.
+12. Descargar una **copia del CSV sin filas duplicadas** (conserva la primera aparición de cada fila).
+13. Ordenar el detalle por columna de **peor a mejor completitud**.
+14. Alternar entre **tema claro y oscuro** (se recuerda la elección y se respeta el tema del sistema).
 
 **Regla de duplicidad:** se considera duplicada una fila cuyos valores, después de quitar espacios al inicio y final, son idénticos a los de una fila previa, respetando mayúsculas/minúsculas. El primer registro no se marca como duplicado. Las filas enteramente en blanco se omiten.
 
@@ -100,7 +105,7 @@ El examen requiere demostrar el **uso real** de GitHub Copilot para apoyar el de
 ## 10. Consideraciones y límites
 
 - Admite archivos CSV de hasta 5 MB y 20 000 filas de datos, máximo 200 columnas.
-- No modifica el archivo original; exporta un resumen de calidad, no una limpieza de registros.
+- No modifica el archivo original; además del informe de calidad, permite descargar una copia sin filas duplicadas.
 - La vista previa enseña un máximo de 10 filas por filtro, pero las estadísticas incluyen todas las filas.
 - No evalúa consistencia de formatos ni reglas específicas de negocio; únicamente datos vacíos y duplicados exactos.
 - Los datos simulados del ejemplo no representan clientes reales.

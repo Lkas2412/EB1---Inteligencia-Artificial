@@ -77,36 +77,78 @@ export function analyzeCsv(source) {
   const count = Math.max(...parsed.map(row => row.length));
   if (count > 200) throw new Error('El archivo tiene más de 200 columnas. Usa un archivo más pequeño.');
   const headers = uniqueHeaders(parsed[0], count);
+  const headerWidth = parsed[0].length;
   const keys = new Set();
   let emptyCells = 0;
   let duplicateRows = 0;
+  let irregularRows = 0;
+  let paddedCells = 0;
+  const colEmpty = new Array(count).fill(0);
+  const colPadded = new Array(count).fill(0);
+  const colUnique = Array.from({ length: count }, () => new Set());
   const rows = parsed.slice(1).map((values, index) => {
-    const cells = headers.map((_, j) => (values[j] ?? '').trim());
-    const blanks = cells.filter(value => value === '').length;
+    const raw = headers.map((_, j) => values[j] ?? '');
+    const cells = raw.map(value => value.trim());
+    let blanks = 0;
+    cells.forEach((value, j) => {
+      if (value === '') { blanks++; colEmpty[j]++; }
+      else {
+        colUnique[j].add(value);
+        if (raw[j] !== value) { colPadded[j]++; paddedCells++; }
+      }
+    });
     emptyCells += blanks;
+    // Fila irregular: su cantidad de celdas difiere de la del encabezado
+    // (antes se rellenaba/recortaba en silencio y el problema quedaba oculto).
+    const irregular = values.length !== headerWidth;
+    if (irregular) irregularRows++;
     const fingerprint = JSON.stringify(cells);
     const isDuplicate = keys.has(fingerprint);
     if (isDuplicate) duplicateRows++;
     keys.add(fingerprint);
-    return { number: index + 1, cells, incomplete: blanks > 0, duplicate: isDuplicate };
+    return { number: index + 1, cells, incomplete: blanks > 0, duplicate: isDuplicate, irregular };
   });
   if (rows.length > 20000) throw new Error('Se admiten hasta 20 000 registros por archivo.');
   const columns = headers.map((name, colIndex) => {
-    const empty = rows.reduce((n, row) => n + (row.cells[colIndex] === '' ? 1 : 0), 0);
-    return { name, empty, complete: rows.length - empty, percentage: rows.length ? (rows.length - empty) / rows.length * 100 : 0 };
+    const empty = colEmpty[colIndex];
+    return {
+      name, empty, complete: rows.length - empty,
+      percentage: rows.length ? (rows.length - empty) / rows.length * 100 : 0,
+      unique: colUnique[colIndex].size,
+      padded: colPadded[colIndex]
+    };
   });
+  const blankPercent = rows.length ? emptyCells / (rows.length * headers.length) * 100 : 0;
+  const duplicatePercent = rows.length ? duplicateRows / rows.length * 100 : 0;
   return {
     delimiter, headers, rows, columns, emptyCells, duplicateRows,
+    irregularRows, paddedCells,
     incompleteRows: rows.filter(row => row.incomplete).length,
-    blankPercent: rows.length ? emptyCells / (rows.length * headers.length) * 100 : 0
+    blankPercent,
+    duplicatePercent,
+    /** Puntaje global 0–100: penaliza el % de celdas vacías y el % de filas duplicadas. */
+    qualityScore: Math.max(0, Math.round(100 - blankPercent - duplicatePercent))
   };
 }
 
 /** Evita inyección de fórmulas al abrir el CSV exportado en una hoja de cálculo. */
 export function csvCell(value) {
   let text = String(value ?? '');
-  if (/^[\s]*[=+@-]/.test(text)) text = `'${text}`;
+  // OWASP (CSV Injection): también neutralizar celdas que comienzan con | o %
+  // (vectores DDE/fórmula en algunas hojas de cálculo), no solo =, +, - y @.
+  if (/^[\s]*[=+@%|-]/.test(text)) text = `'${text}`;
   return `"${text.replaceAll('"', '""')}"`;
+}
+
+/**
+ * Genera un CSV con los datos originales pero sin filas duplicadas
+ * (conserva la primera aparición de cada fila). Usa el delimitador
+ * detectado en el archivo de origen y celdas protegidas con csvCell.
+ */
+export function makeCleanCsv(analysis) {
+  const kept = analysis.rows.filter(row => !row.duplicate);
+  const lines = [analysis.headers, ...kept.map(row => row.cells)];
+  return '\uFEFF' + lines.map(line => line.map(csvCell).join(analysis.delimiter)).join('\r\n');
 }
 
 export function makeReport(analysis, filename) {
@@ -118,7 +160,10 @@ export function makeReport(analysis, filename) {
     ['General', 'Celdas vacías', analysis.emptyCells, analysis.blankPercent.toFixed(2) + '%'],
     ['General', 'Filas duplicadas', analysis.duplicateRows, ''],
     ['General', 'Filas con vacíos', analysis.incompleteRows, ''],
-    ...analysis.columns.map(col => ['Columna', col.name, col.empty + ' vacíos', col.percentage.toFixed(2) + '% completo'])
+    ['General', 'Filas con columnas de más/menos', analysis.irregularRows ?? 0, ''],
+    ['General', 'Celdas con espacios al inicio/final', analysis.paddedCells ?? 0, ''],
+    ['General', 'Puntaje de calidad', analysis.qualityScore + ' / 100', ''],
+    ...analysis.columns.map(col => ['Columna', col.name, `${col.empty} vacíos · ${col.unique ?? 0} únicos`, col.percentage.toFixed(2) + '% completo'])
   ];
   return '\uFEFF' + records.map(record => record.map(csvCell).join(',')).join('\r\n');
 }

@@ -1,4 +1,4 @@
-import { analyzeCsv, makeReport } from './csv.js';
+import { analyzeCsv, makeReport, makeCleanCsv } from './csv.js';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const $ = selector => document.querySelector(selector);
@@ -11,6 +11,36 @@ const input = $('#csvInput');
 const dropZone = $('#dropZone');
 const message = $('#message');
 
+/* ---------- Tema claro / oscuro ---------- */
+const THEME_KEY = 'datacheck-theme';
+
+function storedTheme() {
+  try { return window.localStorage.getItem(THEME_KEY); } catch { return null; }
+}
+
+function applyTheme(theme) {
+  if (document.documentElement) document.documentElement.dataset.theme = theme;
+  const toggle = $('#themeToggle');
+  if (toggle) {
+    toggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+    toggle.setAttribute('aria-label', theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro');
+  }
+}
+
+function initTheme() {
+  const saved = storedTheme();
+  const systemDark = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved === 'dark' || saved === 'light' ? saved : systemDark ? 'dark' : 'light');
+  const toggle = $('#themeToggle');
+  if (toggle) toggle.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    try { window.localStorage.setItem(THEME_KEY, next); } catch { /* sin persistencia disponible */ }
+    applyTheme(next);
+  });
+}
+initTheme();
+
 function alertMessage(text, kind = 'error') {
   message.hidden = false;
   message.className = `message ${kind}`;
@@ -19,6 +49,37 @@ function alertMessage(text, kind = 'error') {
 function clearMessage() { message.hidden = true; message.textContent = ''; }
 function fmt(num) { return new Intl.NumberFormat('es-PE').format(num); }
 function percent(num) { return `${num.toFixed(1)} %`; }
+
+/** Ejecuta fn en el próximo frame; sin rAF (tests, navegadores viejos) usa un timer. */
+function nextFrame(fn) {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
+  else setTimeout(fn, 0);
+}
+
+/** Cuenta de 0 al valor con easing; sin rAF o con valor 0 escribe el número final al instante. */
+function animateNumber(el, value) {
+  const target = Math.round(value);
+  const reduced = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (typeof requestAnimationFrame !== 'function' || reduced || target === 0) {
+    el.textContent = fmt(target);
+    return;
+  }
+  const duration = 650;
+  const start = performance.now();
+  // Red de seguridad: si rAF se pausa (pestaña en segundo plano), el número
+  // final se escribe igual al cumplirse la duración de la animación.
+  const settle = setTimeout(() => { el.textContent = fmt(target); }, duration + 60);
+  const tick = now => {
+    // Clamp a [0,1]: el timestamp de rAF y performance.now() pueden diferir
+    // levemente y un t negativo mostraría valores como "-0" o "-1".
+    const t = Math.min(1, Math.max(0, (now - start) / duration));
+    el.textContent = fmt(Math.round(target * (1 - Math.pow(1 - t, 3))));
+    if (t < 1) requestAnimationFrame(tick);
+    else clearTimeout(settle);
+  };
+  requestAnimationFrame(tick);
+}
 
 function loadData(text, name) {
   try {
@@ -30,6 +91,8 @@ function loadData(text, name) {
     $('#fileLabel').append(document.createTextNode(` ${name} · ${fmt(analysis.rows.length)} registros`));
     $('#resetBtn').hidden = false;
     $('#exportBtn').disabled = false;
+    const cleanBtn = $('#cleanBtn');
+    if (cleanBtn) cleanBtn.disabled = false;
     clearMessage();
     setFilter('all');
     renderSummary();
@@ -48,6 +111,12 @@ function clearAnalysis() {
   $('#fileLabel').innerHTML = '<span class="status-dot"></span> Ningún archivo cargado';
   $('#resetBtn').hidden = true;
   $('#exportBtn').disabled = true;
+  const cleanBtn = $('#cleanBtn');
+  if (cleanBtn) cleanBtn.disabled = true;
+  const sortSelect = $('#sortSelect');
+  if (sortSelect) sortSelect.value = 'original';
+  const insightIcon = $('#insightIcon');
+  if (insightIcon) insightIcon.textContent = 'i';
   for (const id of ['statRows', 'statCols', 'statBlanks', 'statDuplicates']) $(`#${id}`).textContent = '—';
   $('#statBlanksSub').textContent = 'Pendiente de análisis';
   $('#insight').hidden = true;
@@ -77,24 +146,39 @@ async function loadFile(file) {
 
 function renderSummary() {
   if (!result) return;
-  $('#statRows').textContent = fmt(result.rows.length);
-  $('#statCols').textContent = fmt(result.headers.length);
-  $('#statBlanks').textContent = fmt(result.emptyCells);
+  animateNumber($('#statRows'), result.rows.length);
+  animateNumber($('#statCols'), result.headers.length);
+  animateNumber($('#statBlanks'), result.emptyCells);
   $('#statBlanksSub').textContent = `${percent(result.blankPercent)} del total de celdas`;
-  $('#statDuplicates').textContent = fmt(result.duplicateRows);
-  const hasProblems = result.emptyCells > 0 || result.duplicateRows > 0;
+  animateNumber($('#statDuplicates'), result.duplicateRows);
+  const irregularRows = result.irregularRows ?? 0;
+  const paddedCells = result.paddedCells ?? 0;
+  const hasProblems = result.emptyCells > 0 || result.duplicateRows > 0 || irregularRows > 0;
   const insight = $('#insight');
   insight.hidden = false;
   insight.classList.toggle('good', !hasProblems);
+  const icon = $('#insightIcon');
+  if (icon) {
+    icon.textContent = result.qualityScore;
+    icon.title = 'Puntaje de calidad (0 a 100)';
+  }
+  const extras = [];
+  if (irregularRows > 0) extras.push(`${fmt(irregularRows)} filas con más o menos columnas que el encabezado`);
+  if (paddedCells > 0) extras.push(`${fmt(paddedCells)} celdas con espacios al inicio o al final`);
+  const extraText = extras.length ? ` Además se detectaron ${extras.join(' y ')}.` : '';
   $('#insightText').textContent = hasProblems
-    ? `Se detectaron ${fmt(result.incompleteRows)} filas con valores vacíos y ${fmt(result.duplicateRows)} filas duplicadas. Revisa los filtros de la vista previa antes de utilizar estos datos.`
-    : '¡Excelente! No se detectaron celdas vacías ni filas duplicadas en el archivo.';
+    ? `Puntaje de calidad: ${result.qualityScore}/100. Se detectaron ${fmt(result.incompleteRows)} filas con valores vacíos y ${fmt(result.duplicateRows)} filas duplicadas.${extraText} Revisa los filtros de la vista previa antes de utilizar estos datos.`
+    : `¡Excelente! Puntaje de calidad: ${result.qualityScore}/100. No se detectaron celdas vacías ni filas duplicadas en el archivo.`;
 }
 
 function renderColumns() {
   const root = $('#columnsList');
   root.replaceChildren();
-  for (const col of result.columns) {
+  const sortSelect = $('#sortSelect');
+  const columns = sortSelect && sortSelect.value === 'worst'
+    ? [...result.columns].sort((a, b) => a.percentage - b.percentage)
+    : result.columns;
+  for (const col of columns) {
     const item = document.createElement('div');
     item.className = 'column-item';
     const line = document.createElement('div');
@@ -107,12 +191,20 @@ function renderColumns() {
     line.append(name, rate);
     const track = document.createElement('div');
     track.className = 'progress-track';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-valuenow', String(Math.round(col.percentage)));
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-label', `Completitud de ${col.name}`);
     const fill = document.createElement('div');
     fill.className = 'progress-fill' + (col.percentage < 80 ? ' low' : col.percentage < 100 ? ' medium' : '');
-    fill.style.width = `${col.percentage}%`;
+    fill.style.width = '0%';
+    nextFrame(() => { fill.style.width = `${col.percentage}%`; });
     track.append(fill);
     const note = document.createElement('small');
-    note.textContent = `${fmt(col.complete)} completos · ${fmt(col.empty)} vacíos`;
+    const details = [`${fmt(col.complete)} completos`, `${fmt(col.empty)} vacíos`, `${fmt(col.unique ?? 0)} únicos`];
+    if (col.padded) details.push(`${fmt(col.padded)} con espacios en los bordes`);
+    note.textContent = details.join(' · ');
     item.append(line, track, note);
     root.append(item);
   }
@@ -167,8 +259,8 @@ function renderPreview() {
     }
     const status = document.createElement('td');
     const tag = document.createElement('span');
-    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.incomplete ? 'incomplete' : 'ok'}`;
-    tag.textContent = row.duplicate ? 'Duplicada' : row.incomplete ? 'Incompleta' : 'Correcta';
+    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.incomplete ? 'incomplete' : 'ok'}`;
+    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.incomplete ? 'Incompleta' : 'Correcta';
     status.append(tag);
     tr.append(status);
     tbody.append(tr);
@@ -185,7 +277,13 @@ function reset() {
 $('#selectBtn').addEventListener('click', e => { e.stopPropagation(); input.click(); });
 dropZone.addEventListener('click', e => { if (e.target !== $('#selectBtn')) input.click(); });
 dropZone.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === dropZone) { e.preventDefault(); input.click(); } });
-input.addEventListener('change', () => loadFile(input.files[0]));
+input.addEventListener('change', () => {
+  const file = input.files[0];
+  // Limpiar el valor permite volver a elegir el mismo archivo: sin esto el
+  // navegador no vuelve a disparar "change" y la recarga queda sin respuesta.
+  input.value = '';
+  loadFile(file);
+});
 for (const event of ['dragenter', 'dragover']) dropZone.addEventListener(event, e => { e.preventDefault(); dropZone.classList.add('dragover'); });
 for (const event of ['dragleave', 'drop']) dropZone.addEventListener(event, e => { e.preventDefault(); dropZone.classList.remove('dragover'); });
 dropZone.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
@@ -198,16 +296,28 @@ $('#demoBtn').addEventListener('click', async () => {
 });
 $('#resetBtn').addEventListener('click', reset);
 for (const button of $all('[data-filter]')) button.addEventListener('click', () => setFilter(button.dataset.filter));
-$('#exportBtn').addEventListener('click', () => {
-  if (!result) return;
-  const output = makeReport(result, currentFilename);
-  const blob = new Blob([output], { type: 'text/csv;charset=utf-8' });
+function downloadCsv(content, filename) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `informe_datacheck_${Date.now()}.csv`;
+  link.download = filename;
   document.body.append(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+$('#exportBtn').addEventListener('click', () => {
+  if (!result) return;
+  downloadCsv(makeReport(result, currentFilename), `informe_datacheck_${Date.now()}.csv`);
 });
+
+const cleanBtn = $('#cleanBtn');
+if (cleanBtn) cleanBtn.addEventListener('click', () => {
+  if (!result) return;
+  downloadCsv(makeCleanCsv(result), `datacheck_sin_duplicados_${Date.now()}.csv`);
+});
+
+const sortSelect = $('#sortSelect');
+if (sortSelect) sortSelect.addEventListener('change', () => { if (result) renderColumns(); });

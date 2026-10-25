@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport } from '../src/csv.js';
+import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv } from '../src/csv.js';
 
 test('Lee CSV con comas entre comillas y comillas escapadas', () => {
   const rows = parseDelimited('nombre,nota\n"Ana, María","Dijo ""hola"""');
@@ -41,6 +41,39 @@ test('Evita fórmulas en el CSV exportado y genera reporte', () => {
   const report = makeReport(analyzeCsv('id,nombre\n1,Ana'), 'test.csv');
   assert.match(report, /Registros/);
   assert.match(report, /nombre/);
+});
+
+test('Neutraliza también celdas que empiezan con | o % (inyección CSV)', () => {
+  assert.equal(csvCell('|2+2'), '"\'|2+2"');
+  assert.equal(csvCell('%2+2'), '"\'%2+2"');
+  assert.equal(csvCell('  =cmd'), '"\'  =cmd"');
+  assert.equal(csvCell('texto'), '"texto"');
+});
+
+test('Detecta filas irregulares, espacios en bordes y valores únicos', () => {
+  const a = analyzeCsv('id,nombre,ciudad\n1,Ana,Lima\n2, Luis ,Cusco\n3,Ana,Lima\n4,Solo\n5,Eva,Lima,extra');
+  assert.equal(a.irregularRows, 2);
+  assert.equal(a.rows[4].irregular, true);
+  assert.equal(a.rows[0].irregular, false);
+  assert.equal(a.paddedCells, 1);
+  assert.equal(a.columns[1].padded, 1);
+  assert.equal(a.columns[1].unique, 4);
+  assert.equal(a.columns[2].unique, 2);
+});
+
+test('Calcula el puntaje de calidad', () => {
+  assert.equal(analyzeCsv('id,nombre\n1,Ana\n2,Luis').qualityScore, 100);
+  const conProblemas = analyzeCsv('id,ciudad\n1,Lima\n2,\n1,Lima\n3,Arequipa');
+  // 12,5 % de celdas vacías (1 de 8) y 25 % de filas duplicadas (1 de 4)
+  assert.equal(conProblemas.qualityScore, 63);
+});
+
+test('Genera el CSV limpio sin filas duplicadas', () => {
+  const a = analyzeCsv('id;nombre\n1;Ana\n2;Luis\n1;Ana');
+  const clean = makeCleanCsv(a);
+  assert.match(clean, /"1";"Ana"/);
+  assert.equal(clean.split('\r\n').length, 3); // encabezado + 2 filas únicas
+  assert.equal((clean.match(/"1";"Ana"/g) || []).length, 1);
 });
 
 test('Resuelve encabezados repetidos', () => {
