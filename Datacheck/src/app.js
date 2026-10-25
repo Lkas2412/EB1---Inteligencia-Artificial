@@ -1,4 +1,4 @@
-import { analyzeCsv, makeReport, makeCleanCsv, decodeCsvData, validateSchema, generateSchema, diffAnalyses, makeDiffReport } from './csv.js';
+import { analyzeCsv, makeReport, makeCleanCsv, decodeCsvData, validateSchema, validateRelations, generateSchema, makeJsonReport, diffAnalyses, makeDiffReport } from './csv.js';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const $ = selector => document.querySelector(selector);
@@ -9,6 +9,11 @@ let currentEncoding = 'utf-8';
 let schema = null;
 let schemaNotice = '';
 let schemaRowRefs = [];
+let relationRowRefs = [];
+// Última validación de esquema aplicada (columnas + relaciones): es lo que
+// el informe JSON incluye como bloque «esquema». Vale null si todavía no se
+// validó nada o si el esquema se limpió o se cargó otro archivo.
+let lastSchemaInfo = null;
 let diffOther = null;
 let lastDiff = null;
 let activeFilter = 'all';
@@ -110,10 +115,16 @@ function loadData(text, name) {
     result = analysis;
     currentFilename = name;
     activeFilter = 'all';
+    // La validación guardada era del archivo anterior: el informe JSON no
+    // debe mezclarla con este. Si hay esquema, applySchemaValidation (más
+    // abajo) la regenera para el archivo nuevo.
+    lastSchemaInfo = null;
     $('#fileLabel').innerHTML = '<span class="status-dot loaded"></span>';
     $('#fileLabel').append(document.createTextNode(` ${name} · ${fmt(analysis.rows.length)} registros`));
     $('#resetBtn').hidden = false;
     $('#exportBtn').disabled = false;
+    const exportJsonBtnOn = $('#exportJsonBtn');
+    if (exportJsonBtnOn) exportJsonBtnOn.disabled = false;
     const cleanBtn = $('#cleanBtn');
     if (cleanBtn) cleanBtn.disabled = false;
     clearMessage();
@@ -140,6 +151,7 @@ function loadData(text, name) {
 function clearAnalysis() {
   loadGeneration++;
   result = null;
+  lastSchemaInfo = null;
   currentEncoding = 'utf-8';
   const schemaPanelOff = $('#schemaPanel');
   if (schemaPanelOff) schemaPanelOff.hidden = true;
@@ -155,6 +167,8 @@ function clearAnalysis() {
   $('#fileLabel').innerHTML = '<span class="status-dot"></span> Ningún archivo cargado';
   $('#resetBtn').hidden = true;
   $('#exportBtn').disabled = true;
+  const exportJsonBtnOff = $('#exportJsonBtn');
+  if (exportJsonBtnOff) exportJsonBtnOff.disabled = true;
   const cleanBtn = $('#cleanBtn');
   if (cleanBtn) cleanBtn.disabled = true;
   const sortSelect = $('#sortSelect');
@@ -296,6 +310,7 @@ function renderColumns() {
     if (col.stats && col.type === 'fecha') details.push(`desde ${col.stats.min} hasta ${col.stats.max}`);
     if (col.outliers) details.push(`${fmt(col.outliers)} atípicos`);
     if (col.keyDuplicates) details.push(`${fmt(col.keyDuplicates)} repetidos en posible clave`);
+    if (col.constant) details.push(`constante: siempre «${col.constantValue}»`);
     note.textContent = details.join(' · ');
     item.append(line, track, note);
     if (col.topValues?.length) {
@@ -438,6 +453,20 @@ $('#exportBtn').addEventListener('click', () => {
   downloadCsv(makeReport(result, currentFilename), `informe_datacheck_${Date.now()}.csv`);
 });
 
+const exportJsonBtn = $('#exportJsonBtn');
+if (exportJsonBtn) exportJsonBtn.addEventListener('click', () => {
+  if (!result) return;
+  // Mismo patrón de descarga que el esquema JSON: Blob + enlace efímero.
+  // lastSchemaInfo trae la última validación aplicada (o null si no hubo).
+  const blob = new Blob([makeJsonReport(result, currentFilename, lastSchemaInfo)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `informe_datacheck_${Date.now()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+});
+
 const cleanBtn = $('#cleanBtn');
 if (cleanBtn) cleanBtn.addEventListener('click', () => {
   if (!result) return;
@@ -504,15 +533,101 @@ function buildSchemaEditor() {
     const [patTd, patInput] = mkText(rule.pattern);
     const [minTd, minInput] = mkText(rule.min);
     const [maxTd, maxInput] = mkText(rule.max);
+    const [minLenTd, minLenInput] = mkText(rule.minLength);
+    const [maxLenTd, maxLenInput] = mkText(rule.maxLength);
+    minLenInput.classList.add('schema-len');
+    maxLenInput.classList.add('schema-len');
     const [valsTd, valsInput] = mkText(rule.values?.join(', '));
     const resultTd = document.createElement('td');
     resultTd.className = 'schema-result';
     resultTd.textContent = '—';
-    tr.append(nameTd, typeTd, reqTd, uniqTd, patTd, minTd, maxTd, valsTd, resultTd);
+    tr.append(nameTd, typeTd, reqTd, uniqTd, patTd, minTd, maxTd, minLenTd, maxLenTd, valsTd, resultTd);
     body.append(tr);
-    schemaRowRefs.push({ name: col.name, type: typeSel, required: reqInput, unique: uniqInput, pattern: patInput, min: minInput, max: maxInput, values: valsInput, resultCell: resultTd });
+    schemaRowRefs.push({ name: col.name, type: typeSel, required: reqInput, unique: uniqInput, pattern: patInput, min: minInput, max: maxInput, minLength: minLenInput, maxLength: maxLenInput, values: valsInput, resultCell: resultTd });
   }
+  buildRelationsEditor();
 }
+
+/* ---------- Reglas entre columnas ---------- */
+const RELATION_OPS = [['<=', '≤'], ['<', '<'], ['=', '='], ['!=', '≠'], ['>=', '≥'], ['>', '>']];
+const RELATION_FACTOR_OPS = [['', '· sin factor ·'], ['*', '×'], ['+', '+'], ['-', '−']];
+
+function buildRelationsEditor() {
+  const body = $('#relationsBody');
+  relationRowRefs = [];
+  if (!body) return;
+  body.replaceChildren();
+  for (const relation of schema?.relations ?? []) addRelationRow(relation);
+}
+
+function addRelationRow(relation = {}) {
+  const body = $('#relationsBody');
+  if (!body || !result) return;
+  const mkColSelect = (value, ariaLabel) => {
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', ariaLabel);
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '— columna —';
+    select.append(empty);
+    for (const header of result.headers) {
+      const opt = document.createElement('option');
+      opt.value = header;
+      opt.textContent = header;
+      select.append(opt);
+    }
+    // Si la regla guardada apunta a una columna que este archivo no tiene,
+    // se agrega como opción extra (y queda seleccionada): la regla no se
+    // pierde en silencio y el motor la reporta al validar.
+    if (value && !result.headers.includes(value)) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = `${value} (no está en este archivo)`;
+      select.append(opt);
+    }
+    select.value = value ?? '';
+    return select;
+  };
+  const mkOpSelect = (options, value, ariaLabel) => {
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', ariaLabel);
+    for (const [val, label] of options) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = label;
+      select.append(opt);
+    }
+    select.value = value ?? '';
+    return select;
+  };
+  const left = mkColSelect(relation.left, 'Primera columna de la regla');
+  const op = mkOpSelect(RELATION_OPS, relation.op ?? '<=', 'Comparación entre columnas');
+  const right = mkColSelect(relation.right, 'Segunda columna de la regla');
+  const factorOp = mkOpSelect(RELATION_FACTOR_OPS, relation.factorOp ?? '', 'Operación con el factor');
+  const factor = mkColSelect(relation.factor, 'Columna factor');
+  // Sin operación elegida no hay factor: el tercer select queda deshabilitado.
+  factor.disabled = !factorOp.value;
+  factorOp.addEventListener('change', () => { factor.disabled = !factorOp.value; });
+  const ref = { left, op, right, factorOp, factor };
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'button button-ghost relation-remove';
+  removeBtn.textContent = '✕';
+  removeBtn.title = 'Quitar esta regla';
+  removeBtn.setAttribute('aria-label', 'Quitar esta regla entre columnas');
+  removeBtn.addEventListener('click', () => {
+    rowEl.remove();
+    relationRowRefs = relationRowRefs.filter(r => r !== ref);
+  });
+  const rowEl = document.createElement('div');
+  rowEl.className = 'relation-row';
+  rowEl.append(left, op, right, factorOp, factor, removeBtn);
+  body.append(rowEl);
+  relationRowRefs.push(ref);
+}
+
+const relationAddBtn = $('#relationAdd');
+if (relationAddBtn) relationAddBtn.addEventListener('click', () => addRelationRow());
 
 function readSchemaFromEditor() {
   const columns = {};
@@ -527,6 +642,12 @@ function readSchemaFromEditor() {
       const raw = ref[key].value.trim();
       if (raw) { const n = Number(raw.replace(',', '.')); if (!Number.isNaN(n)) rule[key] = n; }
     }
+    // Longitudes: solo entran enteros ≥ 0. Lo que no parsea se ignora acá;
+    // si una longitud inválida llega por un JSON cargado, la reporta el motor.
+    for (const key of ['minLength', 'maxLength']) {
+      const raw = ref[key].value.trim();
+      if (raw) { const n = Number(raw); if (Number.isInteger(n) && n >= 0) rule[key] = n; }
+    }
     const values = ref.values.value.split(',').map(v => v.trim()).filter(Boolean);
     if (values.length) rule.values = values;
     if (Object.keys(rule).length) columns[ref.name] = rule;
@@ -539,7 +660,21 @@ function readSchemaFromEditor() {
       if (!(name in columns) && !result.headers.includes(name)) columns[name] = rule;
     }
   }
-  return { version: 1, columns };
+  // Relaciones: solo las filas con ambos lados elegidos. El factor solo
+  // viaja si hay operación y columna factor elegidas.
+  const relations = [];
+  for (const ref of relationRowRefs) {
+    const left = ref.left.value;
+    const right = ref.right.value;
+    if (!left || !right) continue;
+    const relation = { left, op: ref.op.value, right };
+    if (ref.factorOp.value && ref.factor.value) {
+      relation.factor = ref.factor.value;
+      relation.factorOp = ref.factorOp.value;
+    }
+    relations.push(relation);
+  }
+  return { version: 2, columns, relations };
 }
 
 function applySchemaValidation() {
@@ -547,7 +682,11 @@ function applySchemaValidation() {
   schema = readSchemaFromEditor();
   const summary = $('#schemaSummary');
   const filterBtn = $('#schemaFilter');
-  if (!Object.keys(schema.columns).length) {
+  const relations = schema.relations ?? [];
+  // La puerta «sin reglas» mira las dos mitades del esquema: alcanza con
+  // que haya reglas por columna O reglas entre columnas para validar.
+  if (!Object.keys(schema.columns).length && !relations.length) {
+    lastSchemaInfo = null;
     result.rows.forEach(row => { row.schemaViolation = false; });
     for (const ref of schemaRowRefs) { ref.resultCell.textContent = '—'; ref.resultCell.classList.remove('ok'); }
     if (filterBtn) filterBtn.hidden = true;
@@ -557,7 +696,18 @@ function applySchemaValidation() {
     return;
   }
   const res = validateSchema(result, schema);
-  result.rows.forEach((row, i) => { row.schemaViolation = res.rowViolations.has(i); });
+  const relRes = validateRelations(result, relations);
+  const allErrors = [...res.errors, ...relRes.errors];
+  // Una fila viola el esquema si incumple una regla de su columna o una
+  // regla entre columnas: la etiqueta y el filtro «Esquema» ven la unión.
+  result.rows.forEach((row, i) => { row.schemaViolation = res.rowViolations.has(i) || relRes.rowViolations.has(i); });
+  // Lo guarda para el informe JSON: es la foto de esta validación.
+  lastSchemaInfo = {
+    total: res.total + relRes.total,
+    perColumn: res.perColumn,
+    relations: relRes.perRelation,
+    errors: allErrors
+  };
   const counts = new Map(res.perColumn.map(c => [c.name, c.missing ? 'ausente' : c.count]));
   for (const ref of schemaRowRefs) {
     const c = counts.get(ref.name);
@@ -567,11 +717,30 @@ function applySchemaValidation() {
   if (filterBtn) filterBtn.hidden = false;
   if (summary) {
     summary.hidden = false;
-    summary.textContent = res.errors.length
-      ? `⚠ ${res.errors.join(' ')}`
-      : res.total === 0
-        ? '✓ Sin violaciones: el archivo cumple el esquema.'
-        : `${fmt(res.total)} violaciones en ${fmt(res.perColumn.length)} columnas: ${res.perColumn.map(c => `${c.name} (${c.missing ? 'columna ausente' : fmt(c.count)})`).join(', ')}. Filtra la vista previa por «Esquema» para ver las filas.`;
+    if (allErrors.length) {
+      summary.textContent = `⚠ ${allErrors.join(' ')}`;
+    } else if (res.total === 0 && relRes.total === 0
+      && !relRes.perRelation.some(r => typeof r.evaluated === 'number' && r.evaluated < result.rows.length)) {
+      summary.textContent = '✓ Sin violaciones: el archivo cumple el esquema.';
+    } else {
+      const parts = [];
+      if (res.total > 0) parts.push(`${fmt(res.total)} violaciones en ${fmt(res.perColumn.length)} columnas: ${res.perColumn.map(c => `${c.name} (${c.missing ? 'columna ausente' : fmt(c.count)})`).join(', ')}`);
+      if (relations.length) {
+        // Si una regla no pudo evaluar todas las filas (lados vacíos o no
+        // comparables), el resumen lo dice: «sin violaciones» sobre 10 de
+        // 200 filas no significa lo mismo que sobre las 200 (crítica del
+        // PR #10: la falsa sensación de validación es peor que un error).
+        const evalNote = r => (typeof r.evaluated === 'number' && r.evaluated < result.rows.length)
+          ? ` (se evaluaron ${fmt(r.evaluated)} de ${fmt(result.rows.length)} filas)` : '';
+        const items = relRes.perRelation.filter(r => r.count > 0)
+          .map(r => `${r.label}: ${fmt(r.count)} ${r.count === 1 ? 'violación' : 'violaciones'}${evalNote(r)}`);
+        const cleanPartial = relRes.perRelation.filter(r => r.count === 0 && evalNote(r))
+          .map(r => `${r.label}: sin violaciones${evalNote(r)}`);
+        const all = [...items, ...cleanPartial];
+        parts.push(all.length ? `Entre columnas: ${all.join('; ')}` : 'Entre columnas: sin violaciones');
+      }
+      summary.textContent = `${parts.join('. ')}. Filtra la vista previa por «Esquema» para ver las filas.`;
+    }
   }
   renderPreview();
 }
@@ -581,7 +750,14 @@ if (schemaValidateBtn) schemaValidateBtn.addEventListener('click', applySchemaVa
 const schemaGenerateBtn = $('#schemaGenerate');
 if (schemaGenerateBtn) schemaGenerateBtn.addEventListener('click', () => {
   if (!result) return;
+  // Generar reemplaza las reglas por columna, pero las reglas entre
+  // columnas son manuales y no se pueden inferir del archivo: se conservan.
+  // Se leen del EDITOR en vivo, no del global: una regla recién creada y
+  // todavía no validada también es una regla existente (hallazgo de la
+  // auditoría del PR #10: leer el global la perdía en silencio).
+  const keptRelations = readSchemaFromEditor().relations ?? [];
   schema = generateSchema(result);
+  schema.relations = keptRelations;
   // Un archivo muy sucio puede no admitir NINGUNA regla segura (todas
   // las columnas tienen vacíos, repetidos o tipos mezclados): hay que
   // decirlo así, no con el mensaje genérico de «no definiste reglas».
@@ -611,7 +787,9 @@ if (schemaFileInput) schemaFileInput.addEventListener('change', async () => {
   try {
     const parsed = JSON.parse(await file.text());
     if (!parsed || typeof parsed !== 'object' || !parsed.columns || typeof parsed.columns !== 'object') throw new Error('formato');
-    schema = { version: 1, columns: parsed.columns };
+    // Formato v2: { columns, relations }. Los esquemas v1 (sin relations)
+    // cargan igual, con la lista de relaciones vacía.
+    schema = { version: 2, columns: parsed.columns, relations: Array.isArray(parsed.relations) ? parsed.relations : [] };
     buildSchemaEditor();
     applySchemaValidation();
   } catch { alertMessage('El archivo de esquema no es un JSON válido con la estructura esperada ({ "columns": { … } }).'); }
@@ -619,6 +797,7 @@ if (schemaFileInput) schemaFileInput.addEventListener('change', async () => {
 const schemaClearBtn = $('#schemaClear');
 if (schemaClearBtn) schemaClearBtn.addEventListener('click', () => {
   schema = null;
+  lastSchemaInfo = null;
   buildSchemaEditor();
   if (result) result.rows.forEach(row => { row.schemaViolation = false; });
   const filterBtn = $('#schemaFilter');

@@ -69,7 +69,7 @@
     </section>
 
     <section class="results" aria-labelledby="result-title">
-      <div class="section-top results-heading"><div><span class="section-index">02 / DIAGNÓSTICO</span><h2 id="result-title">Resumen de calidad</h2></div><div class="actions"><button id="cleanBtn" type="button" class="button button-secondary" disabled>↓ CSV limpio</button><button id="cleanOptionsBtn" type="button" class="button button-ghost" aria-expanded="false">Opciones de limpieza</button><button id="exportBtn" type="button" class="button button-primary" disabled>↓ Descargar informe CSV</button></div></div>
+      <div class="section-top results-heading"><div><span class="section-index">02 / DIAGNÓSTICO</span><h2 id="result-title">Resumen de calidad</h2></div><div class="actions"><button id="cleanBtn" type="button" class="button button-secondary" disabled>↓ CSV limpio</button><button id="cleanOptionsBtn" type="button" class="button button-ghost" aria-expanded="false">Opciones de limpieza</button><button id="exportBtn" type="button" class="button button-primary" disabled>↓ Descargar informe CSV</button><button id="exportJsonBtn" type="button" class="button button-ghost" disabled>↓ Informe JSON</button></div></div>
       <div id="cleanOptions" class="clean-options" hidden>
         <label><input type="checkbox" id="optEmptyRows" /> Quitar registros totalmente vacíos</label>
         <label><input type="checkbox" id="optPlaceholders" /> Convertir pseudo-vacíos («N/A», «null»…) en celdas vacías</label>
@@ -104,10 +104,11 @@
       </div>
       <div class="schema-scroll">
         <table class="schema-table">
-          <thead><tr><th>Columna</th><th>Tipo esperado</th><th>Requerida</th><th>Única</th><th>Patrón (regex)</th><th>Mín.</th><th>Máx.</th><th>Valores permitidos (coma)</th><th>Violaciones</th></tr></thead>
+          <thead><tr><th>Columna</th><th>Tipo esperado</th><th>Requerida</th><th>Única</th><th>Patrón (regex)</th><th>Mín.</th><th>Máx.</th><th>Long. mín.</th><th>Long. máx.</th><th>Valores permitidos (coma)</th><th>Violaciones</th></tr></thead>
           <tbody id="schemaBody"></tbody>
         </table>
       </div>
+      <div class="relations-box"><div class="relations-head"><h3>Reglas entre columnas</h3><button class="button button-ghost" type="button" id="relationAdd">＋ Agregar regla</button></div><div id="relationsBody"></div><p class="relations-help">Comparan dos columnas fila a fila: que una fecha no sea anterior a otra, o que un total sea el precio por la cantidad. Las filas con algún lado vacío no se evalúan. En importes, las comparaciones admiten una diferencia de hasta 0,01 por redondeo.</p></div>
       <p class="schema-summary" id="schemaSummary" hidden></p>
     </section>
     <section class="panel diff-panel" id="diffPanel" hidden aria-labelledby="diff-title">

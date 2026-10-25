@@ -296,7 +296,7 @@ h2 { margin:7px 0 6px;font-size:23px;letter-spacing:-.035em; }
 .schema-intro {color:var(--muted);font-size:13px;line-height:1.6;margin:2px 0 14px;}
 .schema-actions {display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
 .schema-scroll {overflow-x:auto;}
-.schema-table {width:100%;border-collapse:collapse;font-size:12px;min-width:880px;}
+.schema-table {width:100%;border-collapse:collapse;font-size:12px;min-width:1020px;}
 .schema-table th {text-align:left;color:var(--muted-2);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--border);}
 .schema-table td {padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .schema-table td:first-child {font-weight:700;}
@@ -305,6 +305,17 @@ h2 { margin:7px 0 6px;font-size:23px;letter-spacing:-.035em; }
 .schema-result {font-weight:700;color:var(--bad-text);}
 .schema-result.ok {color:var(--ok-text);}
 .schema-summary {margin-top:12px;font-size:13px;line-height:1.6;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;}
+.schema-table input.schema-len {max-width:72px;}
+.relations-box {margin-top:16px;border-top:1px solid var(--border);padding-top:14px;}
+.relations-head {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+.relations-head h3 {font-size:15px;margin:0;color:var(--heading);}
+.relations-help {color:var(--muted);font-size:12.5px;line-height:1.6;margin:10px 0 0;}
+#relationsBody {display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+#relationsBody:empty {margin-top:0;}
+.relation-row {display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.relation-row select {font:inherit;font-size:11px;font-weight:700;padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-3);color:var(--text);max-width:210px;}
+.relation-row select:disabled {opacity:.5;}
+.relation-remove {padding:6px 10px;line-height:1;}
 .histo {display:flex;align-items:flex-end;gap:2px;height:34px;margin-top:8px;}
 .histo i {flex:1;background:var(--accent);opacity:.7;border-radius:2px 2px 0 0;min-height:3px;}
 .clean-options {display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;}
