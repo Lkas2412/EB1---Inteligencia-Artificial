@@ -285,10 +285,11 @@ El examen requiere demostrar el **uso real** de GitHub Copilot para apoyar el de
 
 ## Ideas futuras
 
-- Detección de valores atípicos (*outliers*) en columnas numéricas.
-- Consistencia de formatos por columna (por ejemplo, fechas mezcladas `DD/MM/AAAA` y `AAAA-MM-DD`).
-- Aviso de codificación dudosa (caracteres dañados tipo `Ã©` por UTF-8 mal interpretado).
-- Detalle por fila con severidades en el informe descargable.
+- Reglas **entre columnas** en el esquema (por ejemplo, que la fecha de fin no sea anterior a la de inicio, o que un total coincida con precio × cantidad).
+- Longitud mínima/máxima de texto como regla del esquema (hoy el rango mín/máx es solo numérico).
+- Alerta de **columna constante** (todos los valores iguales: suele ser una columna olvidada o un error de exportación).
+- Informe de resultados también en **JSON**, además del CSV.
+- Detectar el separador `|` además de coma, punto y coma y tabulación.
 
 ## Referencias
 
