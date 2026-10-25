@@ -31,6 +31,7 @@ Analistas de datos, estudiantes y personal administrativo que necesita revisar a
 12. Descargar una **copia del CSV sin filas duplicadas** (conserva la primera aparición de cada fila).
 13. Ordenar el detalle por columna de **peor a mejor completitud**.
 14. Alternar entre **tema claro y oscuro** (se recuerda la elección y se respeta el tema del sistema).
+15. Detectar **vacíos encubiertos** (valores como `N/A`, `null` o `sin dato` que fingen ser datos), **filas casi duplicadas** (iguales salvo mayúsculas o espacios internos) y **avisos de encabezado** (duplicados —también si solo difieren en mayúsculas— o vacíos que fueron renombrados).
 
 **Regla de duplicidad:** se considera duplicada una fila cuyos valores, después de quitar espacios al inicio y final, son idénticos a los de una fila previa, respetando mayúsculas/minúsculas. El primer registro no se marca como duplicado. Las filas enteramente en blanco se omiten.
 
@@ -107,7 +108,7 @@ El examen requiere demostrar el **uso real** de GitHub Copilot para apoyar el de
 - Admite archivos CSV de hasta 5 MB y 20 000 filas de datos, máximo 200 columnas.
 - No modifica el archivo original; además del informe de calidad, permite descargar una copia sin filas duplicadas.
 - La vista previa enseña un máximo de 10 filas por filtro, pero las estadísticas incluyen todas las filas.
-- No evalúa consistencia de formatos ni reglas específicas de negocio; únicamente datos vacíos y duplicados exactos.
+- No evalúa consistencia de formatos ni reglas específicas de negocio; el análisis se limita a vacíos (incluidos los encubiertos), duplicados exactos y casi duplicados, filas irregulares, espacios en los bordes y avisos de encabezado.
 - Los datos simulados del ejemplo no representan clientes reales.
 - El navegador usa fuentes web de Google como recurso visual opcional; el **contenido del CSV no se transmite** a esa fuente.
 

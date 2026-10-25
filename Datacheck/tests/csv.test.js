@@ -76,6 +76,28 @@ test('Genera el CSV limpio sin filas duplicadas', () => {
   assert.equal((clean.match(/"1";"Ana"/g) || []).length, 1);
 });
 
+test('Cuenta pseudo-vacíos (N/A, sin dato, guiones) sin contarlos como vacíos', () => {
+  const a = analyzeCsv('id,nota\n1,N/A\n2,sin dato\n3,ok\n4,-\n5,');
+  assert.equal(a.placeholderCells, 3);
+  assert.equal(a.columns[1].placeholder, 3);
+  assert.equal(a.emptyCells, 1); // solo la fila 5 es vacía de verdad
+});
+
+test('Detecta casi duplicados que difieren en mayúsculas o espacios', () => {
+  const a = analyzeCsv('id,nombre\n1,Ana Maria\n1,ana maria\n1,Ana  Maria\n1,ANA MARIA\n1,Ana Maria');
+  assert.equal(a.duplicateRows, 1); // solo la última es duplicada exacta
+  assert.equal(a.nearDuplicateRows, 3);
+  assert.equal(a.rows[1].nearDuplicate, true);
+  assert.equal(a.rows[4].nearDuplicate, false);
+  assert.equal(a.rows[4].duplicate, true);
+});
+
+test('Reporta encabezados duplicados (también por mayúsculas) y vacíos', () => {
+  const a = analyzeCsv('id,ID,,nombre, id \n1,2,3,4,5');
+  assert.equal(a.duplicateHeaders, 2);
+  assert.equal(a.emptyHeaders, 1);
+});
+
 test('Resuelve encabezados repetidos', () => {
   const a = analyzeCsv('id,id,\n1,2,3');
   assert.deepEqual(a.headers, ['id', 'id (2)', 'Columna 3']);

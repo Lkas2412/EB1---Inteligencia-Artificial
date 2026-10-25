@@ -59,6 +59,8 @@
   --bad-text: #bd5667;
   --irr-bg: #efe9fe;
   --irr-text: #6d4fc2;
+  --near-bg: #e3ecfe;
+  --near-text: #2f56a8;
   --cell-empty-bg: #fff4e8;
   --cell-empty-text: #b87930;
   --insight-bg: #fff7e8;
@@ -132,6 +134,8 @@
   --bad-text: #f28ba0;
   --irr-bg: #2a1e4d;
   --irr-text: #b79ffa;
+  --near-bg: #1d3260;
+  --near-text: #a9c4f5;
   --cell-empty-bg: #38280d;
   --cell-empty-text: #f0b25c;
   --insight-bg: #2f2410;
@@ -267,6 +271,7 @@ h2 { margin:7px 0 6px;font-size:23px;letter-spacing:-.035em; }
 .row-tag.incomplete {background:var(--warn-bg);color:var(--warn-text);}
 .row-tag.duplicate {background:var(--bad-bg);color:var(--bad-text);}
 .row-tag.irregular {background:var(--irr-bg);color:var(--irr-text);}
+.row-tag.near {background:var(--near-bg);color:var(--near-text);}
 .preview-help {font-size:11px;color:var(--faint);margin-bottom:0;line-height:1.5;}
 .empty-state {color:var(--faint);font-size:12px;line-height:1.65;padding:18px;background:var(--surface-2);border-radius:9px;}
 .footer {display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;color:var(--footer-text);font-size:11px;padding:26px 2px 32px; animation: rise .6s .3s ease both; }

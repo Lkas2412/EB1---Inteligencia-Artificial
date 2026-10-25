@@ -153,7 +153,11 @@ function renderSummary() {
   animateNumber($('#statDuplicates'), result.duplicateRows);
   const irregularRows = result.irregularRows ?? 0;
   const paddedCells = result.paddedCells ?? 0;
-  const hasProblems = result.emptyCells > 0 || result.duplicateRows > 0 || irregularRows > 0;
+  const placeholderCells = result.placeholderCells ?? 0;
+  const nearDuplicateRows = result.nearDuplicateRows ?? 0;
+  const headerIssues = (result.duplicateHeaders ?? 0) + (result.emptyHeaders ?? 0);
+  const hasProblems = result.emptyCells > 0 || result.duplicateRows > 0 || irregularRows > 0
+    || placeholderCells > 0 || nearDuplicateRows > 0 || headerIssues > 0;
   const insight = $('#insight');
   insight.hidden = false;
   insight.classList.toggle('good', !hasProblems);
@@ -162,12 +166,20 @@ function renderSummary() {
     icon.textContent = result.qualityScore;
     icon.title = 'Puntaje de calidad (0 a 100)';
   }
+  const main = [];
+  if (result.incompleteRows > 0) main.push(`${fmt(result.incompleteRows)} filas con valores vacíos`);
+  if (result.duplicateRows > 0) main.push(`${fmt(result.duplicateRows)} filas duplicadas`);
   const extras = [];
   if (irregularRows > 0) extras.push(`${fmt(irregularRows)} filas con más o menos columnas que el encabezado`);
+  if (nearDuplicateRows > 0) extras.push(`${fmt(nearDuplicateRows)} filas casi duplicadas (difieren solo en mayúsculas o espacios)`);
+  if (placeholderCells > 0) extras.push(`${fmt(placeholderCells)} celdas con pseudo-vacíos como «N/A» o «sin dato»`);
   if (paddedCells > 0) extras.push(`${fmt(paddedCells)} celdas con espacios al inicio o al final`);
-  const extraText = extras.length ? ` Además se detectaron ${extras.join(' y ')}.` : '';
+  if (result.duplicateHeaders > 0) extras.push(`${fmt(result.duplicateHeaders)} encabezados duplicados (renombrados automáticamente)`);
+  if (result.emptyHeaders > 0) extras.push(`${fmt(result.emptyHeaders)} encabezados vacíos (renombrados automáticamente)`);
+  const mainText = main.length ? ` Se detectaron ${main.join(' y ')}.` : '';
+  const extraText = extras.length ? ` Además: ${extras.join('; ')}.` : '';
   $('#insightText').textContent = hasProblems
-    ? `Puntaje de calidad: ${result.qualityScore}/100. Se detectaron ${fmt(result.incompleteRows)} filas con valores vacíos y ${fmt(result.duplicateRows)} filas duplicadas.${extraText} Revisa los filtros de la vista previa antes de utilizar estos datos.`
+    ? `Puntaje de calidad: ${result.qualityScore}/100.${mainText}${extraText} Revisa los filtros de la vista previa antes de utilizar estos datos.`
     : `¡Excelente! Puntaje de calidad: ${result.qualityScore}/100. No se detectaron celdas vacías ni filas duplicadas en el archivo.`;
 }
 
@@ -204,6 +216,7 @@ function renderColumns() {
     const note = document.createElement('small');
     const details = [`${fmt(col.complete)} completos`, `${fmt(col.empty)} vacíos`, `${fmt(col.unique ?? 0)} únicos`];
     if (col.padded) details.push(`${fmt(col.padded)} con espacios en los bordes`);
+    if (col.placeholder) details.push(`${fmt(col.placeholder)} pseudo-vacíos`);
     note.textContent = details.join(' · ');
     item.append(line, track, note);
     root.append(item);
@@ -259,8 +272,8 @@ function renderPreview() {
     }
     const status = document.createElement('td');
     const tag = document.createElement('span');
-    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.incomplete ? 'incomplete' : 'ok'}`;
-    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.incomplete ? 'Incompleta' : 'Correcta';
+    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.nearDuplicate ? 'near' : row.incomplete ? 'incomplete' : 'ok'}`;
+    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.nearDuplicate ? 'Casi duplicada' : row.incomplete ? 'Incompleta' : 'Correcta';
     status.append(tag);
     tr.append(status);
     tbody.append(tr);

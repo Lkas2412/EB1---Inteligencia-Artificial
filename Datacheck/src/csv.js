@@ -38,6 +38,12 @@ export function parseDelimited(source, delimiter = ',') {
   return rows;
 }
 
+/** Valores que suelen significar "sin dato" aunque la celda no esté vacía. */
+const PLACEHOLDER_VALUES = new Set([
+  'n/a', 'na', 'n.a.', 'null', 'none', 'unknown', 'desconocido', 'sin dato',
+  'sin datos', 's/d', 'no aplica', 'no disponible', 'ninguno', '-', '--', '.'
+]);
+
 /** Elige el separador con más columnas y filas uniformes. */
 export function detectDelimiter(source) {
   const candidates = [',', ';', '\t'];
@@ -78,13 +84,29 @@ export function analyzeCsv(source) {
   if (count > 200) throw new Error('El archivo tiene más de 200 columnas. Usa un archivo más pequeño.');
   const headers = uniqueHeaders(parsed[0], count);
   const headerWidth = parsed[0].length;
+  // Avisos de encabezado: hoy los duplicados y vacíos se renombran en
+  // silencio; se cuentan para poder reportarlos (la colisión es sin
+  // distinguir mayúsculas, igual que en uniqueHeaders).
+  const seenHeaders = new Set();
+  let duplicateHeaders = 0;
+  let emptyHeaders = 0;
+  for (const cell of parsed[0]) {
+    const base = (cell || '').trim();
+    if (base === '') { emptyHeaders++; continue; }
+    if (seenHeaders.has(base.toLowerCase())) duplicateHeaders++;
+    seenHeaders.add(base.toLowerCase());
+  }
   const keys = new Set();
+  const normKeys = new Set();
   let emptyCells = 0;
   let duplicateRows = 0;
+  let nearDuplicateRows = 0;
   let irregularRows = 0;
   let paddedCells = 0;
+  let placeholderCells = 0;
   const colEmpty = new Array(count).fill(0);
   const colPadded = new Array(count).fill(0);
+  const colPlaceholder = new Array(count).fill(0);
   const colUnique = Array.from({ length: count }, () => new Set());
   const rows = parsed.slice(1).map((values, index) => {
     const raw = headers.map((_, j) => values[j] ?? '');
@@ -95,6 +117,7 @@ export function analyzeCsv(source) {
       else {
         colUnique[j].add(value);
         if (raw[j] !== value) { colPadded[j]++; paddedCells++; }
+        if (PLACEHOLDER_VALUES.has(value.toLowerCase())) { colPlaceholder[j]++; placeholderCells++; }
       }
     });
     emptyCells += blanks;
@@ -106,7 +129,13 @@ export function analyzeCsv(source) {
     const isDuplicate = keys.has(fingerprint);
     if (isDuplicate) duplicateRows++;
     keys.add(fingerprint);
-    return { number: index + 1, cells, incomplete: blanks > 0, duplicate: isDuplicate, irregular };
+    // Casi duplicada: coincide con una fila previa solo tras normalizar
+    // (minúsculas y espacios internos colapsados), sin ser duplicada exacta.
+    const normFingerprint = JSON.stringify(cells.map(value => value.toLowerCase().replace(/\s+/g, ' ')));
+    const isNearDuplicate = !isDuplicate && normKeys.has(normFingerprint);
+    if (isNearDuplicate) nearDuplicateRows++;
+    normKeys.add(normFingerprint);
+    return { number: index + 1, cells, incomplete: blanks > 0, duplicate: isDuplicate, irregular, nearDuplicate: isNearDuplicate };
   });
   if (rows.length > 20000) throw new Error('Se admiten hasta 20 000 registros por archivo.');
   const columns = headers.map((name, colIndex) => {
@@ -115,14 +144,16 @@ export function analyzeCsv(source) {
       name, empty, complete: rows.length - empty,
       percentage: rows.length ? (rows.length - empty) / rows.length * 100 : 0,
       unique: colUnique[colIndex].size,
-      padded: colPadded[colIndex]
+      padded: colPadded[colIndex],
+      placeholder: colPlaceholder[colIndex]
     };
   });
   const blankPercent = rows.length ? emptyCells / (rows.length * headers.length) * 100 : 0;
   const duplicatePercent = rows.length ? duplicateRows / rows.length * 100 : 0;
   return {
     delimiter, headers, rows, columns, emptyCells, duplicateRows,
-    irregularRows, paddedCells,
+    irregularRows, paddedCells, placeholderCells, nearDuplicateRows,
+    duplicateHeaders, emptyHeaders,
     incompleteRows: rows.filter(row => row.incomplete).length,
     blankPercent,
     duplicatePercent,
@@ -162,6 +193,10 @@ export function makeReport(analysis, filename) {
     ['General', 'Filas con vacíos', analysis.incompleteRows, ''],
     ['General', 'Filas con columnas de más/menos', analysis.irregularRows ?? 0, ''],
     ['General', 'Celdas con espacios al inicio/final', analysis.paddedCells ?? 0, ''],
+    ['General', 'Celdas con pseudo-vacíos (N/A, null, sin dato…)', analysis.placeholderCells ?? 0, ''],
+    ['General', 'Filas casi duplicadas (difieren en mayúsculas/espacios)', analysis.nearDuplicateRows ?? 0, ''],
+    ['General', 'Encabezados duplicados (renombrados)', analysis.duplicateHeaders ?? 0, ''],
+    ['General', 'Encabezados vacíos (renombrados)', analysis.emptyHeaders ?? 0, ''],
     ['General', 'Puntaje de calidad', analysis.qualityScore + ' / 100', ''],
     ...analysis.columns.map(col => ['Columna', col.name, `${col.empty} vacíos · ${col.unique ?? 0} únicos`, col.percentage.toFixed(2) + '% completo'])
   ];
