@@ -132,6 +132,14 @@ DataCheck no pretende reemplazar a las herramientas profesionales: ocupa el huec
 
 En ambas capturas se aprecia el detalle por columna (tipo detectado, completitud, valores únicos) y la vista previa con las etiquetas *Correcta* e *Incompleta* y las celdas vacías resaltadas.
 
+**Esquema definido por el usuario** — el esquema se generó desde el propio ejemplo y después se exigió que `id_cliente` sea única: la validación delata sus 2 valores repetidos (las demás columnas quedan con ✓):
+
+<img src="docs/img/captura-esquema.png" alt="Sección de esquema de DataCheck con las reglas por columna y 2 violaciones detectadas en id_cliente" width="900">
+
+**Comparación entre dos archivos** — diff por la columna clave `id` entre dos versiones de un reporte: 1 agregada, 1 eliminada y 1 modificada, con el cambio de celda «140» → «145»:
+
+<img src="docs/img/captura-diff.png" alt="Sección de comparación de DataCheck mostrando 1 fila agregada, 1 eliminada y 1 modificada entre dos archivos" width="900">
+
 ## Cómo ejecutarla
 
 El sitio es estático: **no requiere base de datos, claves API ni backend**. Solo necesitas servir la carpeta con un servidor local.
