@@ -151,6 +151,7 @@ test('Calcula estadísticas por columna y detecta atípicos por IQR', () => {
   assert.equal(col.stats.min, 10);
   assert.equal(col.stats.max, 1000);
   assert.ok(Math.abs(col.stats.mean - 1145 / 11) < 0.01);
+  assert.ok(Math.abs(col.stats.std - 297.1533) < 0.01); // desvío muestral (n−1), como Excel STDEV.S
   assert.equal(col.stats.median, 15);
   assert.equal(col.outliers, 1);
   assert.equal(a.outlierCells, 1);
@@ -162,6 +163,12 @@ test('Una columna numérica constante no marca atípicos', () => {
   const a = analyzeCsv('x\n5\n5\n5\n5');
   assert.equal(a.columns[0].outliers, 0);
   assert.equal(a.outlierCells, 0);
+});
+
+test('Con IQR = 0, un valor distinto de la constante sí es atípico (Tukey estricto)', () => {
+  const a = analyzeCsv('x\n' + [...Array(9).fill('5'), '100'].join('\n'));
+  assert.equal(a.columns[0].outliers, 1);
+  assert.equal(a.rows[9].outlier, true);
 });
 
 test('Reporta el rango de fechas y los valores frecuentes', () => {
@@ -228,6 +235,24 @@ test('Genera un esquema desde el propio archivo y ese archivo lo cumple', () => 
   assert.equal(s.columns.id.unique, true);
   assert.equal(s.columns.correo.type, 'correo');
   assert.equal(validateSchema(a, s).total, 0);
+});
+
+test('Detecta mojibake de signos (Â¡) y del euro (â‚¬), también en encabezados', () => {
+  assert.equal(analyzeCsv('precio\nâ‚¬').mojibakeCells, 1);
+  assert.equal(analyzeCsv('saludo\nÂ¡Hola!').mojibakeCells, 1);
+  assert.equal(analyzeCsv('nombrÃ©,x\nAna,1').mojibakeCells, 1);
+  assert.equal(analyzeCsv('nombre\nJosé').mojibakeCells, 0);
+});
+
+test('Decodifica UTF-16 con BOM en vez de mostrar basura', () => {
+  const text = 'nombre\nJosé';
+  const bytes = new Uint8Array(text.length * 2 + 2);
+  bytes[0] = 0xFF;
+  bytes[1] = 0xFE;
+  for (let i = 0; i < text.length; i++) { bytes[2 + i * 2] = text.charCodeAt(i) & 0xFF; bytes[3 + i * 2] = text.charCodeAt(i) >> 8; }
+  const decoded = decodeCsvData(bytes.buffer);
+  assert.equal(decoded.encoding, 'utf-16');
+  assert.equal(decoded.text, text);
 });
 
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {

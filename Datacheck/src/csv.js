@@ -50,6 +50,10 @@ export function parseDelimited(source, delimiter = ',') {
  */
 export function decodeCsvData(buffer) {
   const bytes = new Uint8Array(buffer);
+  // BOM de UTF-16 (Excel exporta así algunos archivos): se decodifica
+  // como tal en vez de caer a Windows-1252 y mostrar basura.
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), encoding: 'utf-16', bom: true };
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), encoding: 'utf-16', bom: true };
   const bom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF;
   const view = bom ? bytes.subarray(3) : bytes;
   try {
@@ -60,7 +64,7 @@ export function decodeCsvData(buffer) {
 }
 
 /** Secuencias típicas de texto dañado por doble codificación (mojibake). */
-const MOJIBAKE_RE = /Ã[\u0080-\u00BF]|â€|�/;
+const MOJIBAKE_RE = /Ã[\u0080-\u00BF]|Â[\u0080-\u00BF]|â[\u2000-\u206F\u20A0-\u20BF]|�/;
 
 /** Valores que suelen significar "sin dato" aunque la celda no esté vacía. */
 const PLACEHOLDER_VALUES = new Set([
@@ -189,7 +193,8 @@ export function analyzeCsv(source) {
   let irregularRows = 0;
   let paddedCells = 0;
   let placeholderCells = 0;
-  let mojibakeCells = 0;
+  // El daño de codificación también se cuenta en los encabezados.
+  let mojibakeCells = headers.filter(h => MOJIBAKE_RE.test(h)).length;
   const colEmpty = new Array(count).fill(0);
   const colPadded = new Array(count).fill(0);
   const colPlaceholder = new Array(count).fill(0);
@@ -275,16 +280,20 @@ export function analyzeCsv(source) {
       const sorted = colNums[j].map(e => e.v).sort((a, b) => a - b);
       const n = sorted.length;
       const mean = sorted.reduce((a, b) => a + b, 0) / n;
-      const std = Math.sqrt(sorted.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+      // Desvío muestral (n−1), como csvstat y Excel (STDEV.S), que es el
+      // que el usuario puede contrastar; con n=1 no hay dispersión.
+      const std = n > 1 ? Math.sqrt(sorted.reduce((a, v) => a + (v - mean) ** 2, 0) / (n - 1)) : 0;
       const q1 = quantile(sorted, 0.25);
       const q3 = quantile(sorted, 0.75);
       const iqr = q3 - q1;
+      // Cercas de Tukey estrictas: si IQR = 0 (la mitad central de los
+      // datos es un único valor), la cerca es ese punto y cualquier otro
+      // valor es atípico — justo el caso «columna constante con un
+      // importe mal cargado» que más vale avisar.
+      const low = q1 - 1.5 * iqr;
+      const high = q3 + 1.5 * iqr;
       let outliers = 0;
-      if (iqr > 0) {
-        const low = q1 - 1.5 * iqr;
-        const high = q3 + 1.5 * iqr;
-        for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
-      }
+      for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
       outlierCells += outliers;
       stats = { min: sorted[0], max: sorted[n - 1], mean, median: quantile(sorted, 0.5), std, outliers };
     } else if (colTypes[j].type === 'fecha' && colDates[j].length) {
