@@ -50,6 +50,10 @@ export function parseDelimited(source, delimiter = ',') {
  */
 export function decodeCsvData(buffer) {
   const bytes = new Uint8Array(buffer);
+  // BOM de UTF-16 (Excel exporta así algunos archivos): se decodifica
+  // como tal en vez de caer a Windows-1252 y mostrar basura.
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), encoding: 'utf-16', bom: true };
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), encoding: 'utf-16', bom: true };
   const bom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF;
   const view = bom ? bytes.subarray(3) : bytes;
   try {
@@ -60,7 +64,7 @@ export function decodeCsvData(buffer) {
 }
 
 /** Secuencias típicas de texto dañado por doble codificación (mojibake). */
-const MOJIBAKE_RE = /Ã[\u0080-\u00BF]|â€|�/;
+const MOJIBAKE_RE = /Ã[\u0080-\u00BF]|Â[\u0080-\u00BF]|â[\u2000-\u206F\u20A0-\u20BF]|�/;
 
 /** Valores que suelen significar "sin dato" aunque la celda no esté vacía. */
 const PLACEHOLDER_VALUES = new Set([
@@ -189,7 +193,8 @@ export function analyzeCsv(source) {
   let irregularRows = 0;
   let paddedCells = 0;
   let placeholderCells = 0;
-  let mojibakeCells = 0;
+  // El daño de codificación también se cuenta en los encabezados.
+  let mojibakeCells = headers.filter(h => MOJIBAKE_RE.test(h)).length;
   const colEmpty = new Array(count).fill(0);
   const colPadded = new Array(count).fill(0);
   const colPlaceholder = new Array(count).fill(0);

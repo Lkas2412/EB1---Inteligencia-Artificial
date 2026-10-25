@@ -206,6 +206,24 @@ test('Cuenta celdas con mojibake (texto dañado por doble codificación)', () =>
   assert.equal(a.mojibakeCells, 2);
 });
 
+test('Detecta mojibake de signos (Â¡) y del euro (â‚¬), también en encabezados', () => {
+  assert.equal(analyzeCsv('precio\nâ‚¬').mojibakeCells, 1);
+  assert.equal(analyzeCsv('saludo\nÂ¡Hola!').mojibakeCells, 1);
+  assert.equal(analyzeCsv('nombrÃ©,x\nAna,1').mojibakeCells, 1);
+  assert.equal(analyzeCsv('nombre\nJosé').mojibakeCells, 0);
+});
+
+test('Decodifica UTF-16 con BOM en vez de mostrar basura', () => {
+  const text = 'nombre\nJosé';
+  const bytes = new Uint8Array(text.length * 2 + 2);
+  bytes[0] = 0xFF;
+  bytes[1] = 0xFE;
+  for (let i = 0; i < text.length; i++) { bytes[2 + i * 2] = text.charCodeAt(i) & 0xFF; bytes[3 + i * 2] = text.charCodeAt(i) >> 8; }
+  const decoded = decodeCsvData(bytes.buffer);
+  assert.equal(decoded.encoding, 'utf-16');
+  assert.equal(decoded.text, text);
+});
+
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {
   const a = analyzeCsv('a,b,c\n,,\n1,2,3');
   assert.equal(a.rows.length, 2);
