@@ -151,6 +151,7 @@ test('Calcula estadísticas por columna y detecta atípicos por IQR', () => {
   assert.equal(col.stats.min, 10);
   assert.equal(col.stats.max, 1000);
   assert.ok(Math.abs(col.stats.mean - 1145 / 11) < 0.01);
+  assert.ok(Math.abs(col.stats.std - 297.1533) < 0.01); // desvío muestral (n−1), como Excel STDEV.S
   assert.equal(col.stats.median, 15);
   assert.equal(col.outliers, 1);
   assert.equal(a.outlierCells, 1);
@@ -162,6 +163,12 @@ test('Una columna numérica constante no marca atípicos', () => {
   const a = analyzeCsv('x\n5\n5\n5\n5');
   assert.equal(a.columns[0].outliers, 0);
   assert.equal(a.outlierCells, 0);
+});
+
+test('Con IQR = 0, un valor distinto de la constante sí es atípico (Tukey estricto)', () => {
+  const a = analyzeCsv('x\n' + [...Array(9).fill('5'), '100'].join('\n'));
+  assert.equal(a.columns[0].outliers, 1);
+  assert.equal(a.rows[9].outlier, true);
 });
 
 test('Reporta el rango de fechas y los valores frecuentes', () => {
