@@ -8,7 +8,7 @@ Importa un archivo CSV y detecta en segundos celdas vacías, filas duplicadas, t
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-m%C3%B3dulos_ES-F7DF1E?logo=javascript&logoColor=black)
 ![Dependencias](https://img.shields.io/badge/dependencias-0-2ea44f)
-![Tests](https://img.shields.io/badge/tests-24_superados-2ea44f)
+![Tests](https://img.shields.io/badge/tests-27_superados-2ea44f)
 ![Privacidad](https://img.shields.io/badge/privacidad-100%25_local-0969da)
 ![Temas](https://img.shields.io/badge/temas-claro_y_oscuro-8250df)
 
@@ -66,6 +66,9 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 | Filas irregulares | Filas con más o menos columnas que el encabezado. |
 | Tipo por columna | Infiere si cada columna es de **números, fechas, correos, booleanos o texto**, y marca las celdas que no coinciden con el tipo dominante (incluidas fechas imposibles como `31/02/2026`, validadas contra el calendario real). |
 | Avisos de encabezado | Encabezados duplicados (también si solo difieren en mayúsculas) o vacíos, que la app renombra para poder trabajar. |
+| Estadísticas por columna | Media, mediana, mínimo y máximo en columnas numéricas; rango de fechas en las de fecha. |
+| Valores atípicos | Números fuera del rango habitual de su columna (método del rango intercuartílico): el clásico «cero de más» en un importe. |
+| Valores frecuentes | Los valores que más se repiten en cada columna, con su conteo. |
 | Espacios en los bordes | Celdas con espacios al inicio o al final, una causa silenciosa de duplicados y cruces fallidos. |
 | Valores únicos | Cuántos valores distintos tiene cada columna. |
 
@@ -150,6 +153,7 @@ El tipo de una columna es el de la **mayoría de sus celdas clasificables**, sie
 | **Casi duplicada** | Coincide con otra fila salvo mayúsculas o espacios internos. |
 | **Irregular** | Tiene más o menos columnas que el encabezado. |
 | **Tipo distinto** | Alguna celda no coincide con el tipo dominante de su columna. |
+| **Atípico** | Tiene un valor numérico fuera del rango habitual de su columna. |
 | *Vacío* (en la celda) | Esa celda está vacía y aparece resaltada. |
 
 ### Regla de duplicidad
@@ -203,7 +207,7 @@ La lógica y la carga de archivos cuentan con pruebas automáticas (Node 18+, si
 npm test
 ```
 
-Son **24 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
+Son **27 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
 
 ## Uso de GitHub Copilot
 

@@ -170,6 +170,8 @@ async function loadFile(file) {
   } catch { if (generation === loadGeneration) failLoad('No fue posible leer el archivo seleccionado.'); }
 }
 
+const fmtDec = value => value.toLocaleString('es', { maximumFractionDigits: 2 });
+
 function renderSummary() {
   if (!result) return;
   animateNumber($('#statRows'), result.rows.length);
@@ -183,8 +185,9 @@ function renderSummary() {
   const nearDuplicateRows = result.nearDuplicateRows ?? 0;
   const headerIssues = (result.duplicateHeaders ?? 0) + (result.emptyHeaders ?? 0);
   const typeMismatchCells = result.typeMismatchCells ?? 0;
+  const outlierCells = result.outlierCells ?? 0;
   const hasProblems = result.emptyCells > 0 || result.duplicateRows > 0 || irregularRows > 0
-    || placeholderCells > 0 || nearDuplicateRows > 0 || headerIssues > 0 || typeMismatchCells > 0;
+    || placeholderCells > 0 || nearDuplicateRows > 0 || headerIssues > 0 || typeMismatchCells > 0 || outlierCells > 0;
   const insight = $('#insight');
   insight.hidden = false;
   insight.classList.toggle('good', !hasProblems);
@@ -204,6 +207,7 @@ function renderSummary() {
   if (result.duplicateHeaders > 0) extras.push(`${fmt(result.duplicateHeaders)} encabezados duplicados (renombrados automáticamente)`);
   if (result.emptyHeaders > 0) extras.push(`${fmt(result.emptyHeaders)} encabezados vacíos (renombrados automáticamente)`);
   if (typeMismatchCells > 0) extras.push(`${fmt(typeMismatchCells)} celdas que no coinciden con el tipo de su columna`);
+  if (outlierCells > 0) extras.push(`${fmt(outlierCells)} valores atípicos en columnas numéricas (fuera del rango habitual)`);
   const mainText = main.length ? ` Se detectaron ${main.join(' y ')}.` : '';
   const extraText = extras.length ? ` Además: ${extras.join('; ')}.` : '';
   $('#insightText').textContent = hasProblems
@@ -246,8 +250,18 @@ function renderColumns() {
     if (col.typeMismatches) details.push(`${fmt(col.typeMismatches)} de otro tipo`);
     if (col.padded) details.push(`${fmt(col.padded)} con espacios en los bordes`);
     if (col.placeholder) details.push(`${fmt(col.placeholder)} pseudo-vacíos`);
+    if (col.stats && col.type === 'numero') details.push(`media ${fmtDec(col.stats.mean)}`, `mediana ${fmtDec(col.stats.median)}`, `mín ${fmtDec(col.stats.min)}`, `máx ${fmtDec(col.stats.max)}`);
+    if (col.stats && col.type === 'fecha') details.push(`desde ${col.stats.min} hasta ${col.stats.max}`);
+    if (col.outliers) details.push(`${fmt(col.outliers)} atípicos`);
     note.textContent = details.join(' · ');
     item.append(line, track, note);
+    if (col.topValues?.length) {
+      const top = document.createElement('small');
+      top.className = 'column-top';
+      top.textContent = `Frecuentes: ${col.topValues.map(t => `${t.value} ×${fmt(t.count)}`).join(' · ')}`;
+      top.title = top.textContent;
+      item.append(top);
+    }
     root.append(item);
   }
 }
@@ -302,8 +316,8 @@ function renderPreview() {
     }
     const status = document.createElement('td');
     const tag = document.createElement('span');
-    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.nearDuplicate ? 'near' : row.typeMismatch ? 'type' : row.incomplete ? 'incomplete' : 'ok'}`;
-    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.nearDuplicate ? 'Casi duplicada' : row.typeMismatch ? 'Tipo distinto' : row.incomplete ? 'Incompleta' : 'Correcta';
+    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.nearDuplicate ? 'near' : row.typeMismatch ? 'type' : row.outlier ? 'outlier' : row.incomplete ? 'incomplete' : 'ok'}`;
+    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.nearDuplicate ? 'Casi duplicada' : row.typeMismatch ? 'Tipo distinto' : row.outlier ? 'Atípico' : row.incomplete ? 'Incompleta' : 'Correcta';
     status.append(tag);
     tr.append(status);
     tbody.append(tr);

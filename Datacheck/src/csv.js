@@ -75,6 +75,29 @@ function isDateValue(value) {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+/** Convierte un valor ya clasificado como número a Number (formatos es/en). */
+function parseNumberValue(value) {
+  let text = value;
+  if (/^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$/.test(text)) text = text.replaceAll('.', '').replace(',', '.'); // 1.234 / 1.234,56
+  else if (/^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) text = text.replaceAll(',', '');              // 1,234 / 1,234.56
+  else if (/^[+-]?\d+[.,]\d+$/.test(text)) text = text.replace(',', '.');                               // 1234,56 / 1234.56
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Milisegundos UTC de una fecha ya validada por isDateValue (para rangos). */
+function dateTimeValue(value) {
+  const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(value)
+    || /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(value);
+  if (!match) return null;
+  let year, month, day;
+  if (match[1].length === 4) { year = +match[1]; month = +match[2]; day = +match[3]; }
+  else { day = +match[1]; month = +match[2]; year = +match[3]; }
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date.getTime();
+}
+
 /** Clasifica una celda no vacía en un tipo simple. Heurística barata y sin librerías. */
 export function classifyCell(value) {
   if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return 'correo';
@@ -151,6 +174,9 @@ export function analyzeCsv(source) {
   const colPlaceholder = new Array(count).fill(0);
   const colUnique = Array.from({ length: count }, () => new Set());
   const colTypeCounts = Array.from({ length: count }, () => ({}));
+  const colNums = Array.from({ length: count }, () => []);
+  const colDates = Array.from({ length: count }, () => []);
+  const colFreq = Array.from({ length: count }, () => new Map());
   const typesByRow = [];
   const rows = parsed.slice(1).map((values, index) => {
     const raw = headers.map((_, j) => values[j] ?? '');
@@ -168,6 +194,9 @@ export function analyzeCsv(source) {
           const type = classifyCell(value);
           rowTypes[j] = type;
           colTypeCounts[j][type] = (colTypeCounts[j][type] || 0) + 1;
+          colFreq[j].set(value, (colFreq[j].get(value) || 0) + 1);
+          if (type === 'numero') { const n = parseNumberValue(value); if (n !== null) colNums[j].push({ row: index, v: n }); }
+          else if (type === 'fecha') { const t = dateTimeValue(value); if (t !== null) colDates[j].push({ row: index, t, text: value }); }
         }
       }
     });
@@ -207,6 +236,49 @@ export function analyzeCsv(source) {
     row.typeMismatch = typesByRow[i].some((type, j) => type !== null
       && colTypes[j].mismatches > 0 && type !== colTypes[j].type);
   });
+  // Perfil estadístico por columna: descriptivas en las numéricas (con
+  // atípicos por rango intercuartílico, que no se contamina con el propio
+  // atípico como le pasa al desvío), rango en las de fecha y frecuentes.
+  const quantile = (sorted, q) => {
+    const pos = (sorted.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base];
+  };
+  let outlierCells = 0;
+  const outlierRows = new Set();
+  const colStats = headers.map((_, j) => {
+    let stats = null;
+    if (colTypes[j].type === 'numero' && colNums[j].length) {
+      const sorted = colNums[j].map(e => e.v).sort((a, b) => a - b);
+      const n = sorted.length;
+      const mean = sorted.reduce((a, b) => a + b, 0) / n;
+      const std = Math.sqrt(sorted.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+      const q1 = quantile(sorted, 0.25);
+      const q3 = quantile(sorted, 0.75);
+      const iqr = q3 - q1;
+      let outliers = 0;
+      if (iqr > 0) {
+        const low = q1 - 1.5 * iqr;
+        const high = q3 + 1.5 * iqr;
+        for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
+      }
+      outlierCells += outliers;
+      stats = { min: sorted[0], max: sorted[n - 1], mean, median: quantile(sorted, 0.5), std, outliers };
+    } else if (colTypes[j].type === 'fecha' && colDates[j].length) {
+      let min = colDates[j][0];
+      let max = colDates[j][0];
+      for (const e of colDates[j]) { if (e.t < min.t) min = e; if (e.t > max.t) max = e; }
+      stats = { min: min.text, max: max.text };
+    }
+    const topValues = [...colFreq[j].entries()]
+      .filter(([, c]) => c >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([value, c]) => ({ value, count: c }));
+    return { stats, topValues };
+  });
+  rows.forEach((row, i) => { row.outlier = outlierRows.has(i); });
   const columns = headers.map((name, colIndex) => {
     const empty = colEmpty[colIndex];
     return {
@@ -217,7 +289,10 @@ export function analyzeCsv(source) {
       placeholder: colPlaceholder[colIndex],
       type: colTypes[colIndex].type,
       typeLabel: TYPE_LABELS[colTypes[colIndex].type],
-      typeMismatches: colTypes[colIndex].mismatches
+      typeMismatches: colTypes[colIndex].mismatches,
+      stats: colStats[colIndex].stats,
+      topValues: colStats[colIndex].topValues,
+      outliers: colStats[colIndex].stats?.outliers ?? 0
     };
   });
   const blankPercent = rows.length ? emptyCells / (rows.length * headers.length) * 100 : 0;
@@ -225,7 +300,7 @@ export function analyzeCsv(source) {
   return {
     delimiter, headers, rows, columns, emptyCells, duplicateRows,
     irregularRows, paddedCells, placeholderCells, nearDuplicateRows,
-    duplicateHeaders, emptyHeaders, typeMismatchCells,
+    duplicateHeaders, emptyHeaders, typeMismatchCells, outlierCells,
     incompleteRows: rows.filter(row => row.incomplete).length,
     blankPercent,
     duplicatePercent,
@@ -256,6 +331,7 @@ export function makeCleanCsv(analysis) {
 }
 
 export function makeReport(analysis, filename) {
+  const num = v => String(Number(v.toFixed(2)));
   const records = [
     ['Tipo', 'Campo / indicador', 'Valor', 'Porcentaje'],
     ['General', 'Archivo', filename, ''],
@@ -271,8 +347,9 @@ export function makeReport(analysis, filename) {
     ['General', 'Encabezados duplicados (renombrados)', analysis.duplicateHeaders ?? 0, ''],
     ['General', 'Encabezados vacíos (renombrados)', analysis.emptyHeaders ?? 0, ''],
     ['General', 'Celdas que no coinciden con el tipo de su columna', analysis.typeMismatchCells ?? 0, ''],
+    ['General', 'Valores atípicos (fuera del rango intercuartílico)', analysis.outlierCells ?? 0, ''],
     ['General', 'Puntaje de calidad', analysis.qualityScore + ' / 100', ''],
-    ...analysis.columns.map(col => ['Columna', col.name, `${col.typeLabel ?? 'Texto'} · ${col.empty} vacíos · ${col.unique ?? 0} únicos${col.typeMismatches ? ` · ${col.typeMismatches} de otro tipo` : ''}`, col.percentage.toFixed(2) + '% completo'])
+    ...analysis.columns.map(col => ['Columna', col.name, `${col.typeLabel ?? 'Texto'} · ${col.empty} vacíos · ${col.unique ?? 0} únicos${col.typeMismatches ? ` · ${col.typeMismatches} de otro tipo` : ''}${col.stats && col.type === 'numero' ? ` · media ${num(col.stats.mean)} · mediana ${num(col.stats.median)} · mín ${num(col.stats.min)} · máx ${num(col.stats.max)}` : ''}${col.stats && col.type === 'fecha' ? ` · rango ${col.stats.min} a ${col.stats.max}` : ''}${col.outliers ? ` · ${col.outliers} atípicos` : ''}`, col.percentage.toFixed(2) + '% completo'])
   ];
   return '\uFEFF' + records.map(record => record.map(csvCell).join(',')).join('\r\n');
 }

@@ -144,6 +144,35 @@ test('Clasifica formatos numéricos y de fecha habituales', () => {
   assert.equal(classifyCell('hola'), 'texto');
 });
 
+test('Calcula estadísticas por columna y detecta atípicos por IQR', () => {
+  const a = analyzeCsv('monto\n' + ['10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '1000'].join('\n'));
+  const col = a.columns[0];
+  assert.equal(col.type, 'numero');
+  assert.equal(col.stats.min, 10);
+  assert.equal(col.stats.max, 1000);
+  assert.ok(Math.abs(col.stats.mean - 1145 / 11) < 0.01);
+  assert.equal(col.stats.median, 15);
+  assert.equal(col.outliers, 1);
+  assert.equal(a.outlierCells, 1);
+  assert.equal(a.rows[10].outlier, true);
+  assert.equal(a.rows[0].outlier, false);
+});
+
+test('Una columna numérica constante no marca atípicos', () => {
+  const a = analyzeCsv('x\n5\n5\n5\n5');
+  assert.equal(a.columns[0].outliers, 0);
+  assert.equal(a.outlierCells, 0);
+});
+
+test('Reporta el rango de fechas y los valores frecuentes', () => {
+  const a = analyzeCsv('ciudad,fecha\nLima,2026-03-01\nCusco,2026-01-15\nLima,2026-02-10\nLima,2026-01-20');
+  const [ciudad, fecha] = a.columns;
+  assert.deepEqual(ciudad.topValues, [{ value: 'Lima', count: 3 }]);
+  assert.equal(fecha.type, 'fecha');
+  assert.equal(fecha.stats.min, '2026-01-15');
+  assert.equal(fecha.stats.max, '2026-03-01');
+});
+
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {
   const a = analyzeCsv('a,b,c\n,,\n1,2,3');
   assert.equal(a.rows.length, 2);
