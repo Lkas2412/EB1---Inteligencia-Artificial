@@ -311,6 +311,14 @@ h2 { margin:7px 0 6px;font-size:23px;letter-spacing:-.035em; }
 .clean-options label {display:inline-flex;gap:6px;align-items:center;cursor:pointer;}
 .clean-options input[type='checkbox'] {width:15px;height:15px;accent-color:var(--accent);}
 .clean-note {color:var(--muted);font-size:12px;}
+.diff-panel {margin-top:24px;}
+.diff-controls {display:flex;flex-wrap:wrap;gap:12px;align-items:center;}
+.diff-file-name {color:var(--muted);font-size:13px;}
+.diff-controls label {display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);}
+.diff-result {margin-top:12px;}
+.diff-summary {font-weight:700;font-size:14px;}
+.diff-note {color:var(--muted);font-size:13px;line-height:1.6;}
+.diff-list {margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.7;}
 .column-item .column-top {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .preview-help {font-size:11px;color:var(--faint);margin-bottom:0;line-height:1.5;}
 .empty-state {color:var(--faint);font-size:12px;line-height:1.65;padding:18px;background:var(--surface-2);border-radius:9px;}

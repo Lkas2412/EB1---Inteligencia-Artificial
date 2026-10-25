@@ -110,6 +110,19 @@
       </div>
       <p class="schema-summary" id="schemaSummary" hidden></p>
     </section>
+    <section class="panel diff-panel" id="diffPanel" hidden aria-labelledby="diff-title">
+      <div class="panel-heading"><div><span class="section-index">06 / COMPARAR</span><h2 id="diff-title">Comparar con otro archivo</h2></div></div>
+      <p class="schema-intro">Sube la otra versión del mismo reporte (la del mes pasado, la corregida…) y reconcilia ambos por una columna clave: qué filas se agregaron, cuáles se eliminaron y qué celdas cambiaron.</p>
+      <div class="diff-controls">
+        <button class="button button-secondary" type="button" id="diffFileBtn">Elegir el otro archivo CSV…</button>
+        <input type="file" id="diffFile" accept=".csv,text/csv" hidden />
+        <span id="diffFileName" class="diff-file-name">Ningún archivo elegido</span>
+        <label>Columna clave <select id="diffKey" class="sort-select" aria-label="Columna clave para comparar"></select></label>
+        <button class="button button-primary" type="button" id="diffRun" disabled>Comparar</button>
+        <button class="button button-ghost" type="button" id="diffDownload" hidden>↓ Informe de diferencias CSV</button>
+      </div>
+      <div id="diffResult" class="diff-result" hidden></div>
+    </section>
     <footer class="footer"><span><b>DataCheck</b> · Proyecto académico de Inteligencia Artificial</span><span>Los archivos se procesan localmente; no se envían a un servidor.</span></footer>
   </main>
 </body>

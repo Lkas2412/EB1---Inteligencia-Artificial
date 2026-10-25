@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell, decodeCsvData, validateSchema, generateSchema } from '../src/csv.js';
+import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell, decodeCsvData, validateSchema, generateSchema, diffAnalyses, makeDiffReport } from '../src/csv.js';
 
 test('Lee CSV con comas entre comillas y comillas escapadas', () => {
   const rows = parseDelimited('nombre,nota\n"Ana, María","Dijo ""hola"""');
@@ -247,6 +247,31 @@ test('La limpieza guiada aplica solo las opciones marcadas', () => {
   assert.match(plain, /15\/03\/2026/);
   const fixed = makeCleanCsv(a, { removeEmptyRows: true, placeholdersToEmpty: true, datesToIso: true, removeNearDuplicates: true });
   assert.equal(fixed, '﻿"nombre","fecha","nota"\r\n"Ana","2026-03-15",""\r\n"Luis","2026-01-05","ok"');
+});
+
+test('Compara dos archivos por una columna clave', () => {
+  const base = analyzeCsv('id,nombre,monto\n1,Ana,100\n2,Luis,200\n3,Pedro,300');
+  const other = analyzeCsv('id,nombre,monto,extra\n2,Luis,250,x\n3,Pedro,300,y\n4,Marta,400,z');
+  const d = diffAnalyses(base, other, 'id');
+  assert.equal(d.added.length, 1);
+  assert.equal(d.added[0].key, '4');
+  assert.equal(d.removed.length, 1);
+  assert.equal(d.removed[0].key, '1');
+  assert.equal(d.changed.length, 1);
+  assert.deepEqual(d.changed[0].changes, [{ column: 'monto', from: '200', to: '250' }]);
+  assert.deepEqual(d.addedColumns, ['extra']);
+  const report = makeDiffReport(d);
+  assert.match(report, /Agregada/);
+  assert.match(report, /Eliminada/);
+  assert.match(report, /"250"/);
+});
+
+test('La comparación cuenta las claves vacías o repetidas que no puede reconciliar', () => {
+  const base = analyzeCsv('id,nombre\n,Ana\n5,Luis\n5,Repetido');
+  const other = analyzeCsv('id,nombre\n5,Luis');
+  const d = diffAnalyses(base, other, 'id');
+  assert.equal(d.ignoredBase, 2);
+  assert.equal(d.changed.length, 0);
 });
 
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {

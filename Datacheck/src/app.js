@@ -1,4 +1,4 @@
-import { analyzeCsv, makeReport, makeCleanCsv, decodeCsvData, validateSchema, generateSchema } from './csv.js';
+import { analyzeCsv, makeReport, makeCleanCsv, decodeCsvData, validateSchema, generateSchema, diffAnalyses, makeDiffReport } from './csv.js';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const $ = selector => document.querySelector(selector);
@@ -8,6 +8,8 @@ let currentFilename = '';
 let currentEncoding = 'utf-8';
 let schema = null;
 let schemaRowRefs = [];
+let diffOther = null;
+let lastDiff = null;
 let activeFilter = 'all';
 // Token de generación: cada carga o limpieza lo incrementa y las
 // escrituras asíncronas pendientes (animación, lecturas de archivo)
@@ -126,6 +128,8 @@ function loadData(text, name) {
       // El esquema se conserva entre cargas: si hay uno, se aplica solo.
       if (schema) applySchemaValidation();
     }
+    const diffPanel = $('#diffPanel');
+    if (diffPanel) { diffPanel.hidden = false; resetDiff(); }
   } catch (error) {
     clearAnalysis();
     alertMessage(error instanceof Error ? error.message : 'No se pudo analizar el archivo.');
@@ -142,6 +146,8 @@ function clearAnalysis() {
   if (schemaFilterOff) schemaFilterOff.hidden = true;
   const schemaSummaryOff = $('#schemaSummary');
   if (schemaSummaryOff) schemaSummaryOff.hidden = true;
+  const diffPanelOff = $('#diffPanel');
+  if (diffPanelOff) diffPanelOff.hidden = true;
   currentFilename = '';
   input.value = '';
   activeFilter = 'all';
@@ -604,6 +610,130 @@ if (schemaClearBtn) schemaClearBtn.addEventListener('click', () => {
   const summary = $('#schemaSummary');
   if (summary) summary.hidden = true;
   if (activeFilter === 'schema') setFilter('all'); else renderPreview();
+});
+
+/* ---------- Comparación entre dos archivos (diff) ---------- */
+function resetDiff() {
+  diffOther = null;
+  lastDiff = null;
+  const nameEl = $('#diffFileName');
+  if (nameEl) nameEl.textContent = 'Ningún archivo elegido';
+  const select = $('#diffKey');
+  if (select) select.replaceChildren();
+  const run = $('#diffRun');
+  if (run) run.disabled = true;
+  const dl = $('#diffDownload');
+  if (dl) dl.hidden = true;
+  const root = $('#diffResult');
+  if (root) { root.hidden = true; root.replaceChildren(); }
+}
+
+function populateDiffKeys() {
+  const select = $('#diffKey');
+  if (!select || !result || !diffOther) return;
+  const common = result.headers.filter(h => diffOther.headers.includes(h));
+  select.replaceChildren();
+  let best = null;
+  let bestRatio = -1;
+  for (const h of common) {
+    const opt = document.createElement('option');
+    opt.value = h;
+    opt.textContent = h;
+    select.append(opt);
+    // Clave sugerida: la columna común más única del archivo base.
+    const col = result.columns[result.headers.indexOf(h)];
+    const ratio = col.unique / ((result.rows.length - col.empty) || 1);
+    if (ratio > bestRatio) { bestRatio = ratio; best = h; }
+  }
+  if (best) select.value = best;
+  const run = $('#diffRun');
+  if (run) run.disabled = !common.length;
+}
+
+function renderDiff(diff) {
+  const root = $('#diffResult');
+  if (!root) return;
+  root.replaceChildren();
+  root.hidden = false;
+  const summary = document.createElement('p');
+  summary.className = 'diff-summary';
+  summary.textContent = `Comparando por «${diff.keyName}»: ${fmt(diff.added.length)} agregadas, ${fmt(diff.removed.length)} eliminadas y ${fmt(diff.changed.length)} modificadas.`;
+  root.append(summary);
+  const notes = [];
+  if (diff.ignoredBase || diff.ignoredOther) notes.push(`Se ignoraron ${fmt(diff.ignoredBase)} filas del archivo base y ${fmt(diff.ignoredOther)} del otro por clave vacía o repetida.`);
+  if (diff.addedColumns.length) notes.push(`Columnas agregadas: ${diff.addedColumns.join(', ')}.`);
+  if (diff.removedColumns.length) notes.push(`Columnas eliminadas: ${diff.removedColumns.join(', ')}.`);
+  for (const note of notes) {
+    const p = document.createElement('p');
+    p.className = 'diff-note';
+    p.textContent = note;
+    root.append(p);
+  }
+  const list = document.createElement('ul');
+  list.className = 'diff-list';
+  let changeLines = 0;
+  for (const e of diff.changed) {
+    for (const c of e.changes) {
+      if (changeLines >= 25) break;
+      const li = document.createElement('li');
+      li.textContent = `${e.key} · ${c.column}: «${c.from || '(vacío)'}» → «${c.to || '(vacío)'}»`;
+      list.append(li);
+      changeLines++;
+    }
+    if (changeLines >= 25) break;
+  }
+  if (diff.added.length) {
+    const li = document.createElement('li');
+    li.textContent = `Agregadas: ${diff.added.slice(0, 15).map(e => e.key).join(', ')}${diff.added.length > 15 ? '…' : ''}`;
+    list.append(li);
+  }
+  if (diff.removed.length) {
+    const li = document.createElement('li');
+    li.textContent = `Eliminadas: ${diff.removed.slice(0, 15).map(e => e.key).join(', ')}${diff.removed.length > 15 ? '…' : ''}`;
+    list.append(li);
+  }
+  if (list.childNodes.length) root.append(list);
+  const totalChangeLines = diff.changed.reduce((n, e) => n + e.changes.length, 0);
+  if (totalChangeLines > changeLines) {
+    const p = document.createElement('p');
+    p.className = 'diff-note';
+    p.textContent = `Se muestran ${fmt(changeLines)} de ${fmt(totalChangeLines)} cambios de celdas; el informe CSV descargable los trae todos.`;
+    root.append(p);
+  }
+}
+
+const diffFileInput = $('#diffFile');
+const diffFileBtn = $('#diffFileBtn');
+if (diffFileBtn && diffFileInput) diffFileBtn.addEventListener('click', () => diffFileInput.click());
+if (diffFileInput) diffFileInput.addEventListener('change', async () => {
+  const file = diffFileInput.files[0];
+  diffFileInput.value = '';
+  if (!file || !result) return;
+  if (!/\.csv$/i.test(file.name)) return alertMessage('El archivo a comparar debe tener extensión .csv.');
+  if (file.size > MAX_BYTES) return alertMessage('El archivo a comparar supera los 5 MB permitidos.');
+  try {
+    const decoded = decodeCsvData(await file.arrayBuffer());
+    diffOther = analyzeCsv(decoded.text);
+    const nameEl = $('#diffFileName');
+    if (nameEl) nameEl.textContent = `${file.name} · ${fmt(diffOther.rows.length)} registros`;
+    populateDiffKeys();
+    if (!diffOther.headers.some(h => result.headers.includes(h))) alertMessage('Los dos archivos no comparten ninguna columna para usar como clave.');
+  } catch (error) { alertMessage(error instanceof Error ? error.message : 'No se pudo leer el archivo a comparar.'); }
+});
+const diffRunBtn = $('#diffRun');
+if (diffRunBtn) diffRunBtn.addEventListener('click', () => {
+  if (!result || !diffOther) return;
+  const key = $('#diffKey')?.value;
+  if (!key) return;
+  lastDiff = diffAnalyses(result, diffOther, key);
+  if (!lastDiff) return alertMessage('La columna clave elegida no está en ambos archivos.');
+  renderDiff(lastDiff);
+  const dl = $('#diffDownload');
+  if (dl) dl.hidden = false;
+});
+const diffDownloadBtn = $('#diffDownload');
+if (diffDownloadBtn) diffDownloadBtn.addEventListener('click', () => {
+  if (lastDiff) downloadCsv(makeDiffReport(lastDiff), `diferencias_datacheck_${Date.now()}.csv`);
 });
 
 const sortSelect = $('#sortSelect');

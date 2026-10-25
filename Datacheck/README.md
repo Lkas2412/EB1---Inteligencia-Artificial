@@ -8,7 +8,7 @@ Importa un archivo CSV y detecta en segundos celdas vacías, filas duplicadas, t
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-m%C3%B3dulos_ES-F7DF1E?logo=javascript&logoColor=black)
 ![Dependencias](https://img.shields.io/badge/dependencias-0-2ea44f)
-![Tests](https://img.shields.io/badge/tests-35_superados-2ea44f)
+![Tests](https://img.shields.io/badge/tests-37_superados-2ea44f)
 ![Privacidad](https://img.shields.io/badge/privacidad-100%25_local-0969da)
 ![Temas](https://img.shields.io/badge/temas-claro_y_oscuro-8250df)
 
@@ -86,6 +86,12 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 - **Tus reglas, no solo las genéricas**: por columna puedes exigir tipo esperado, que sea requerida, que sea única, un patrón (expresión regular), un rango mínimo/máximo o una lista de valores permitidos.
 - **Violaciones visibles**: conteo por columna, resumen total, etiqueta «Esquema» en la vista previa y un filtro para ver solo las filas que no cumplen.
 - **Reutilizable**: el esquema se conserva entre cargas (valida cada mes el mismo reporte), se puede **generar desde un archivo que está bien** para usarlo de plantilla, y descargarse o cargarse como **JSON**.
+
+### 🔀 Comparación entre dos archivos (diff)
+
+- **Reconciliación por columna clave**: sube la otra versión del mismo reporte y elige la clave (la app sugiere la columna más única); obtienes las filas **agregadas**, **eliminadas** y **modificadas**, con cada celda que cambió («antes» → «después»).
+- **Informe de diferencias en CSV** para documentar qué cambió entre entregas.
+- Las filas con clave vacía o repetida no se pueden reconciliar y se cuentan aparte, sin mezclarlas con el resultado.
 
 ### ⬇️ Exportación
 
@@ -216,7 +222,7 @@ La lógica y la carga de archivos cuentan con pruebas automáticas (Node 18+, si
 npm test
 ```
 
-Son **35 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
+Son **37 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
 
 ## Uso de GitHub Copilot
 

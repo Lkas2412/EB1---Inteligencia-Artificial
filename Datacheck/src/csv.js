@@ -461,6 +461,68 @@ export function generateSchema(analysis) {
   return { version: 1, columns };
 }
 
+/**
+ * Reconcilia dos análisis por una columna clave (estilo csv-diff):
+ * filas agregadas, eliminadas y modificadas (celda a celda, solo en las
+ * columnas compartidas), más las columnas que aparecen o desaparecen.
+ * Las filas con clave vacía o clave repetida (se conserva la primera) no
+ * se pueden reconciliar: se cuentan en `ignoredBase`/`ignoredOther`.
+ */
+export function diffAnalyses(base, other, keyName) {
+  const keyIndexB = base.headers.indexOf(keyName);
+  const keyIndexO = other.headers.indexOf(keyName);
+  if (keyIndexB === -1 || keyIndexO === -1) return null;
+  const indexByKey = (analysis, keyIndex) => {
+    const map = new Map();
+    let ignored = 0;
+    for (const row of analysis.rows) {
+      const key = row.cells[keyIndex];
+      if (key === '' || map.has(key)) { ignored++; continue; }
+      map.set(key, row);
+    }
+    return { map, ignored };
+  };
+  const { map: baseMap, ignored: ignoredBase } = indexByKey(base, keyIndexB);
+  const { map: otherMap, ignored: ignoredOther } = indexByKey(other, keyIndexO);
+  const sharedColumns = base.headers.filter(h => other.headers.includes(h));
+  const added = [];
+  const removed = [];
+  const changed = [];
+  for (const [key, row] of otherMap) if (!baseMap.has(key)) added.push({ key, row });
+  for (const [key, row] of baseMap) {
+    const otherRow = otherMap.get(key);
+    if (!otherRow) { removed.push({ key, row }); continue; }
+    const changes = [];
+    for (const col of sharedColumns) {
+      const from = row.cells[base.headers.indexOf(col)];
+      const to = otherRow.cells[other.headers.indexOf(col)];
+      if (from !== to) changes.push({ column: col, from, to });
+    }
+    if (changes.length) changed.push({ key, changes });
+  }
+  return {
+    keyName, added, removed, changed,
+    addedColumns: other.headers.filter(h => !base.headers.includes(h)),
+    removedColumns: base.headers.filter(h => !other.headers.includes(h)),
+    ignoredBase, ignoredOther,
+    baseRows: base.rows.length, otherRows: other.rows.length
+  };
+}
+
+/** Informe de la comparación en CSV: agregadas, eliminadas y cambios celda a celda. */
+export function makeDiffReport(diff) {
+  const records = [
+    ['Tipo', 'Clave', 'Columna', 'Antes', 'Después'],
+    ['Resumen', diff.keyName, '', `${diff.baseRows} filas (archivo base)`, `${diff.otherRows} filas (otro archivo)`],
+    ...diff.added.map(e => ['Agregada', e.key, '', '', '']),
+    ...diff.removed.map(e => ['Eliminada', e.key, '', '', '']),
+    ...diff.changed.flatMap(e => e.changes.map(c => ['Modificada', e.key, c.column, c.from, c.to])),
+    ...diff.addedColumns.map(c => ['Columna agregada', '', c, '', '']),
+    ...diff.removedColumns.map(c => ['Columna eliminada', '', c, '', ''])
+  ];
+  return '\uFEFF' + records.map(r => r.map(csvCell).join(',')).join('\r\n');
+}
+
 export function makeReport(analysis, filename) {
   const num = v => String(Number(v.toFixed(2)));
   const records = [
