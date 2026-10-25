@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell } from '../src/csv.js';
+import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell, decodeCsvData } from '../src/csv.js';
 
 test('Lee CSV con comas entre comillas y comillas escapadas', () => {
   const rows = parseDelimited('nombre,nota\n"Ana, María","Dijo ""hola"""');
@@ -171,6 +171,32 @@ test('Reporta el rango de fechas y los valores frecuentes', () => {
   assert.equal(fecha.type, 'fecha');
   assert.equal(fecha.stats.min, '2026-01-15');
   assert.equal(fecha.stats.max, '2026-03-01');
+});
+
+test('Detecta valores repetidos en una columna que parece clave', () => {
+  const ids = Array.from({ length: 19 }, (_, i) => `ID-${i + 1}`);
+  const a = analyzeCsv('id,ciudad\n' + [...ids, 'ID-1'].map((id, i) => `${id},Ciudad${i % 3}`).join('\n'));
+  // 20 filas y 19 IDs únicos (95 %): parece identificador y tiene 1 repetido.
+  assert.equal(a.columns[0].keyDuplicates, 1);
+  assert.equal(a.keyCollisions.length, 1);
+  assert.equal(a.keyCollisions[0].name, 'id');
+  // La ciudad se repite mucho: no es una posible clave, no se marca.
+  assert.equal(a.columns[1].keyDuplicates, 0);
+});
+
+test('Decodifica UTF-8 y rescata Windows-1252 avisando la codificación', () => {
+  const utf8 = decodeCsvData(new TextEncoder().encode('nombre\nJosé'));
+  assert.equal(utf8.encoding, 'utf-8');
+  assert.match(utf8.text, /José/);
+  // 'año' en Windows-1252: la ñ es el byte 0xF1, UTF-8 inválido.
+  const win = decodeCsvData(Uint8Array.from([0x61, 0xF1, 0x6F]).buffer);
+  assert.equal(win.encoding, 'windows-1252');
+  assert.equal(win.text, 'año');
+});
+
+test('Cuenta celdas con mojibake (texto dañado por doble codificación)', () => {
+  const a = analyzeCsv('nombre\nJosÃ©\nMarÃ­a\nAna');
+  assert.equal(a.mojibakeCells, 2);
 });
 
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {

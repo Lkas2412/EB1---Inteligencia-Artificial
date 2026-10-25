@@ -1,10 +1,11 @@
-import { analyzeCsv, makeReport, makeCleanCsv } from './csv.js';
+import { analyzeCsv, makeReport, makeCleanCsv, decodeCsvData } from './csv.js';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const $ = selector => document.querySelector(selector);
 const $all = selector => Array.from(document.querySelectorAll(selector));
 let result = null;
 let currentFilename = '';
+let currentEncoding = 'utf-8';
 let activeFilter = 'all';
 // Token de generación: cada carga o limpieza lo incrementa y las
 // escrituras asíncronas pendientes (animación, lecturas de archivo)
@@ -125,6 +126,7 @@ function loadData(text, name) {
 function clearAnalysis() {
   loadGeneration++;
   result = null;
+  currentEncoding = 'utf-8';
   currentFilename = '';
   input.value = '';
   activeFilter = 'all';
@@ -162,7 +164,17 @@ async function loadFile(file) {
   if (file.size > MAX_BYTES) return failLoad('El archivo supera los 5 MB permitidos.');
   const generation = ++loadGeneration;
   try {
-    const text = await file.text();
+    let text;
+    if (typeof file.arrayBuffer === 'function') {
+      // Decodificación consciente: UTF-8 estricto y, si no lo es,
+      // Windows-1252 (Excel) — con aviso, no con caracteres rotos.
+      const decoded = decodeCsvData(await file.arrayBuffer());
+      text = decoded.text;
+      currentEncoding = decoded.encoding;
+    } else {
+      text = await file.text();
+      currentEncoding = 'utf-8';
+    }
     // Si mientras se leía llegó otra carga o una limpieza, este resultado
     // quedó viejo: se descarta en vez de pisar el estado actual.
     if (generation !== loadGeneration) return;
@@ -186,8 +198,11 @@ function renderSummary() {
   const headerIssues = (result.duplicateHeaders ?? 0) + (result.emptyHeaders ?? 0);
   const typeMismatchCells = result.typeMismatchCells ?? 0;
   const outlierCells = result.outlierCells ?? 0;
+  const mojibakeCells = result.mojibakeCells ?? 0;
+  const keyCollisions = result.keyCollisions ?? [];
   const hasProblems = result.emptyCells > 0 || result.duplicateRows > 0 || irregularRows > 0
-    || placeholderCells > 0 || nearDuplicateRows > 0 || headerIssues > 0 || typeMismatchCells > 0 || outlierCells > 0;
+    || placeholderCells > 0 || nearDuplicateRows > 0 || headerIssues > 0 || typeMismatchCells > 0 || outlierCells > 0
+    || mojibakeCells > 0 || keyCollisions.length > 0;
   const insight = $('#insight');
   insight.hidden = false;
   insight.classList.toggle('good', !hasProblems);
@@ -208,11 +223,16 @@ function renderSummary() {
   if (result.emptyHeaders > 0) extras.push(`${fmt(result.emptyHeaders)} encabezados vacíos (renombrados automáticamente)`);
   if (typeMismatchCells > 0) extras.push(`${fmt(typeMismatchCells)} celdas que no coinciden con el tipo de su columna`);
   if (outlierCells > 0) extras.push(`${fmt(outlierCells)} valores atípicos en columnas numéricas (fuera del rango habitual)`);
+  if (keyCollisions.length) extras.push(`valores repetidos en columnas que parecen identificadores: ${keyCollisions.map(k => `${k.name} (${fmt(k.values)})`).join(', ')}`);
+  if (mojibakeCells > 0) extras.push(`${fmt(mojibakeCells)} celdas con texto posiblemente dañado por codificación (secuencias como «Ã±» en vez de «ñ»)`);
   const mainText = main.length ? ` Se detectaron ${main.join(' y ')}.` : '';
   const extraText = extras.length ? ` Además: ${extras.join('; ')}.` : '';
+  const encodingNote = currentEncoding === 'windows-1252'
+    ? ' El archivo venía en codificación Windows-1252 (típico de Excel) y se interpretó correctamente.'
+    : '';
   $('#insightText').textContent = hasProblems
-    ? `Puntaje de calidad: ${result.qualityScore}/100.${mainText}${extraText} Revisa los filtros de la vista previa antes de utilizar estos datos.`
-    : `¡Excelente! Puntaje de calidad: ${result.qualityScore}/100. No se detectaron celdas vacías ni filas duplicadas en el archivo.`;
+    ? `Puntaje de calidad: ${result.qualityScore}/100.${mainText}${extraText}${encodingNote} Revisa los filtros de la vista previa antes de utilizar estos datos.`
+    : `¡Excelente! Puntaje de calidad: ${result.qualityScore}/100. No se detectaron celdas vacías ni filas duplicadas en el archivo.${encodingNote}`;
 }
 
 function renderColumns() {
@@ -253,6 +273,7 @@ function renderColumns() {
     if (col.stats && col.type === 'numero') details.push(`media ${fmtDec(col.stats.mean)}`, `mediana ${fmtDec(col.stats.median)}`, `mín ${fmtDec(col.stats.min)}`, `máx ${fmtDec(col.stats.max)}`);
     if (col.stats && col.type === 'fecha') details.push(`desde ${col.stats.min} hasta ${col.stats.max}`);
     if (col.outliers) details.push(`${fmt(col.outliers)} atípicos`);
+    if (col.keyDuplicates) details.push(`${fmt(col.keyDuplicates)} repetidos en posible clave`);
     note.textContent = details.join(' · ');
     item.append(line, track, note);
     if (col.topValues?.length) {
@@ -351,9 +372,10 @@ $('#demoBtn').addEventListener('click', async () => {
   try {
     const response = await fetch('./datos_ejemplo.csv');
     if (!response.ok) throw new Error('No se pudo abrir el ejemplo.');
-    const text = await response.text();
+    const decoded = decodeCsvData(await response.arrayBuffer());
     if (generation !== loadGeneration) return;
-    loadData(text, 'datos_ejemplo.csv');
+    currentEncoding = decoded.encoding;
+    loadData(decoded.text, 'datos_ejemplo.csv');
   } catch { if (generation === loadGeneration) failLoad('Abre el proyecto con un servidor local (por ejemplo, Live Server de VS Code) para cargar el ejemplo.'); }
 });
 $('#resetBtn').addEventListener('click', reset);

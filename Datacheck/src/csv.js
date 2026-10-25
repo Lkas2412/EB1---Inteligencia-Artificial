@@ -42,6 +42,26 @@ export function parseDelimited(source, delimiter = ',') {
   return rows;
 }
 
+/**
+ * Decodifica los bytes de un archivo CSV: UTF-8 estricto y, si no es
+ * válido, Windows-1252 (la codificación típica de Excel en Windows).
+ * Devuelve también la codificación usada y si había BOM, para poder
+ * avisar al usuario en vez de mostrar caracteres rotos sin explicación.
+ */
+export function decodeCsvData(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const bom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF;
+  const view = bom ? bytes.subarray(3) : bytes;
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(view), encoding: 'utf-8', bom };
+  } catch {
+    return { text: new TextDecoder('windows-1252').decode(view), encoding: 'windows-1252', bom };
+  }
+}
+
+/** Secuencias típicas de texto dañado por doble codificación (mojibake). */
+const MOJIBAKE_RE = /Ã[\u0080-\u00BF]|â€|�/;
+
 /** Valores que suelen significar "sin dato" aunque la celda no esté vacía. */
 const PLACEHOLDER_VALUES = new Set([
   'n/a', 'na', 'n.a.', 'null', 'none', 'unknown', 'desconocido', 'sin dato',
@@ -169,6 +189,7 @@ export function analyzeCsv(source) {
   let irregularRows = 0;
   let paddedCells = 0;
   let placeholderCells = 0;
+  let mojibakeCells = 0;
   const colEmpty = new Array(count).fill(0);
   const colPadded = new Array(count).fill(0);
   const colPlaceholder = new Array(count).fill(0);
@@ -188,6 +209,7 @@ export function analyzeCsv(source) {
       else {
         colUnique[j].add(value);
         if (raw[j] !== value) { colPadded[j]++; paddedCells++; }
+        if (MOJIBAKE_RE.test(value)) mojibakeCells++;
         if (PLACEHOLDER_VALUES.has(value.toLowerCase())) { colPlaceholder[j]++; placeholderCells++; }
         else {
           // Los pseudo-vacíos no participan del tipo: ya se reportan aparte.
@@ -279,6 +301,20 @@ export function analyzeCsv(source) {
     return { stats, topValues };
   });
   rows.forEach((row, i) => { row.outlier = outlierRows.has(i); });
+  // Colisiones de clave: una columna casi única (>= 90 % de valores
+  // distintos) con algún valor repetido parece un identificador con
+  // duplicados — el duplicado peligroso, porque la fila entera no se
+  // repite: el mismo ID trae datos distintos y rompe cruces e importes.
+  const keyCollisions = [];
+  headers.forEach((_, j) => {
+    const total = [...colFreq[j].values()].reduce((a, b) => a + b, 0);
+    if (total < 5) return;
+    const repeated = [...colFreq[j].values()].filter(c => c >= 2);
+    if (repeated.length && colFreq[j].size / total >= 0.9) {
+      keyCollisions.push({ name: headers[j], colIndex: j, values: repeated.length, extraRows: repeated.reduce((a, c) => a + c - 1, 0) });
+    }
+  });
+  const keyDupByCol = new Map(keyCollisions.map(k => [k.colIndex, k.values]));
   const columns = headers.map((name, colIndex) => {
     const empty = colEmpty[colIndex];
     return {
@@ -292,7 +328,8 @@ export function analyzeCsv(source) {
       typeMismatches: colTypes[colIndex].mismatches,
       stats: colStats[colIndex].stats,
       topValues: colStats[colIndex].topValues,
-      outliers: colStats[colIndex].stats?.outliers ?? 0
+      outliers: colStats[colIndex].stats?.outliers ?? 0,
+      keyDuplicates: keyDupByCol.get(colIndex) ?? 0
     };
   });
   const blankPercent = rows.length ? emptyCells / (rows.length * headers.length) * 100 : 0;
@@ -300,7 +337,7 @@ export function analyzeCsv(source) {
   return {
     delimiter, headers, rows, columns, emptyCells, duplicateRows,
     irregularRows, paddedCells, placeholderCells, nearDuplicateRows,
-    duplicateHeaders, emptyHeaders, typeMismatchCells, outlierCells,
+    duplicateHeaders, emptyHeaders, typeMismatchCells, outlierCells, mojibakeCells, keyCollisions,
     incompleteRows: rows.filter(row => row.incomplete).length,
     blankPercent,
     duplicatePercent,
@@ -348,8 +385,10 @@ export function makeReport(analysis, filename) {
     ['General', 'Encabezados vacíos (renombrados)', analysis.emptyHeaders ?? 0, ''],
     ['General', 'Celdas que no coinciden con el tipo de su columna', analysis.typeMismatchCells ?? 0, ''],
     ['General', 'Valores atípicos (fuera del rango intercuartílico)', analysis.outlierCells ?? 0, ''],
+    ['General', 'Celdas con posible daño de codificación (mojibake)', analysis.mojibakeCells ?? 0, ''],
+    ['General', 'Columnas que parecen clave con valores repetidos', (analysis.keyCollisions ?? []).length, ''],
     ['General', 'Puntaje de calidad', analysis.qualityScore + ' / 100', ''],
-    ...analysis.columns.map(col => ['Columna', col.name, `${col.typeLabel ?? 'Texto'} · ${col.empty} vacíos · ${col.unique ?? 0} únicos${col.typeMismatches ? ` · ${col.typeMismatches} de otro tipo` : ''}${col.stats && col.type === 'numero' ? ` · media ${num(col.stats.mean)} · mediana ${num(col.stats.median)} · mín ${num(col.stats.min)} · máx ${num(col.stats.max)}` : ''}${col.stats && col.type === 'fecha' ? ` · rango ${col.stats.min} a ${col.stats.max}` : ''}${col.outliers ? ` · ${col.outliers} atípicos` : ''}`, col.percentage.toFixed(2) + '% completo'])
+    ...analysis.columns.map(col => ['Columna', col.name, `${col.typeLabel ?? 'Texto'} · ${col.empty} vacíos · ${col.unique ?? 0} únicos${col.typeMismatches ? ` · ${col.typeMismatches} de otro tipo` : ''}${col.stats && col.type === 'numero' ? ` · media ${num(col.stats.mean)} · mediana ${num(col.stats.median)} · mín ${num(col.stats.min)} · máx ${num(col.stats.max)}` : ''}${col.stats && col.type === 'fecha' ? ` · rango ${col.stats.min} a ${col.stats.max}` : ''}${col.outliers ? ` · ${col.outliers} atípicos` : ''}${col.keyDuplicates ? ` · ${col.keyDuplicates} repetidos en posible clave` : ''}`, col.percentage.toFixed(2) + '% completo'])
   ];
   return '\uFEFF' + records.map(record => record.map(csvCell).join(',')).join('\r\n');
 }
