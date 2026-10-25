@@ -230,6 +230,25 @@ test('Genera un esquema desde el propio archivo y ese archivo lo cumple', () => 
   assert.equal(validateSchema(a, s).total, 0);
 });
 
+test('Calcula el histograma de una columna numérica', () => {
+  const a = analyzeCsv('v\n' + ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'].join('\n'));
+  assert.deepEqual(a.columns[0].stats.histogram, [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+  const b = analyzeCsv('v\n5\n5\n5\n15');
+  assert.equal(b.columns[0].stats.histogram[0], 3);
+  assert.equal(b.columns[0].stats.histogram[9], 1);
+});
+
+test('La limpieza guiada aplica solo las opciones marcadas', () => {
+  const a = analyzeCsv('nombre,fecha,nota\nAna,15/03/2026,N/A\nLuis,2026-01-05,ok\n,,\nANA,15/03/2026,N/A');
+  const plain = makeCleanCsv(a);
+  // Sin opciones: solo caerían duplicadas exactas (no hay); nada se transforma.
+  assert.equal(plain.split('\r\n').length, 5);
+  assert.match(plain, /N\/A/);
+  assert.match(plain, /15\/03\/2026/);
+  const fixed = makeCleanCsv(a, { removeEmptyRows: true, placeholdersToEmpty: true, datesToIso: true, removeNearDuplicates: true });
+  assert.equal(fixed, '﻿"nombre","fecha","nota"\r\n"Ana","2026-03-15",""\r\n"Luis","2026-01-05","ok"');
+});
+
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {
   const a = analyzeCsv('a,b,c\n,,\n1,2,3');
   assert.equal(a.rows.length, 2);

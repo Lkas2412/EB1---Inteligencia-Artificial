@@ -305,6 +305,12 @@ h2 { margin:7px 0 6px;font-size:23px;letter-spacing:-.035em; }
 .schema-result {font-weight:700;color:var(--bad-text);}
 .schema-result.ok {color:var(--ok-text);}
 .schema-summary {margin-top:12px;font-size:13px;line-height:1.6;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;}
+.histo {display:flex;align-items:flex-end;gap:2px;height:34px;margin-top:8px;}
+.histo i {flex:1;background:var(--accent);opacity:.7;border-radius:2px 2px 0 0;min-height:3px;}
+.clean-options {display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;}
+.clean-options label {display:inline-flex;gap:6px;align-items:center;cursor:pointer;}
+.clean-options input[type='checkbox'] {width:15px;height:15px;accent-color:var(--accent);}
+.clean-note {color:var(--muted);font-size:12px;}
 .column-item .column-top {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .preview-help {font-size:11px;color:var(--faint);margin-bottom:0;line-height:1.5;}
 .empty-state {color:var(--faint);font-size:12px;line-height:1.65;padding:18px;background:var(--surface-2);border-radius:9px;}

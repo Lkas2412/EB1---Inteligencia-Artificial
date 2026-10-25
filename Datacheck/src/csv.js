@@ -286,7 +286,15 @@ export function analyzeCsv(source) {
         for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
       }
       outlierCells += outliers;
-      stats = { min: sorted[0], max: sorted[n - 1], mean, median: quantile(sorted, 0.5), std, outliers };
+      // Histograma de 10 rangos para dibujar la distribución en el detalle.
+      let histogram = null;
+      if (sorted[n - 1] > sorted[0]) {
+        const bins = new Array(10).fill(0);
+        const width = (sorted[n - 1] - sorted[0]) / 10;
+        for (const v of sorted) bins[Math.min(9, Math.floor((v - sorted[0]) / width))]++;
+        histogram = bins;
+      }
+      stats = { min: sorted[0], max: sorted[n - 1], mean, median: quantile(sorted, 0.5), std, outliers, histogram };
     } else if (colTypes[j].type === 'fecha' && colDates[j].length) {
       let min = colDates[j][0];
       let max = colDates[j][0];
@@ -361,9 +369,33 @@ export function csvCell(value) {
  * completo de columnas—, no el texto crudo del archivo, con el
  * delimitador detectado en el origen y celdas protegidas con csvCell.
  */
-export function makeCleanCsv(analysis) {
-  const kept = analysis.rows.filter(row => !row.duplicate);
-  const lines = [analysis.headers, ...kept.map(row => row.cells)];
+/** Normaliza una fecha válida a ISO (AAAA-MM-DD); si no es fecha, la deja igual. */
+function toIsoDate(value) {
+  const ymd = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(value);
+  if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+  const dmy = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(value);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  return value;
+}
+
+/**
+ * Genera el CSV limpio. Sin opciones: solo fuera las filas duplicadas
+ * exactas (comportamiento histórico). Opciones de corrección guiada:
+ * - `removeEmptyRows`: quita los registros con todas las celdas vacías.
+ * - `placeholdersToEmpty`: convierte pseudo-vacíos («N/A», «null»…) en vacío.
+ * - `datesToIso`: normaliza las fechas a AAAA-MM-DD.
+ * - `removeNearDuplicates`: también quita las casi duplicadas.
+ */
+export function makeCleanCsv(analysis, options = {}) {
+  let kept = analysis.rows.filter(row => !row.duplicate);
+  if (options.removeNearDuplicates) kept = kept.filter(row => !row.nearDuplicate);
+  if (options.removeEmptyRows) kept = kept.filter(row => row.cells.some(cell => cell !== ''));
+  const lines = [analysis.headers, ...kept.map(row => row.cells.map(value => {
+    let v = value;
+    if (options.placeholdersToEmpty && PLACEHOLDER_VALUES.has(v.toLowerCase())) v = '';
+    if (options.datesToIso && v !== '' && classifyCell(v) === 'fecha') v = toIsoDate(v);
+    return v;
+  }))];
   return '\uFEFF' + lines.map(line => line.map(csvCell).join(analysis.delimiter)).join('\r\n');
 }
 

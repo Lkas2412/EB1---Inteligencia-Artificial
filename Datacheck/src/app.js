@@ -298,6 +298,20 @@ function renderColumns() {
       top.title = top.textContent;
       item.append(top);
     }
+    if (col.stats?.histogram) {
+      const histo = document.createElement('div');
+      histo.className = 'histo';
+      histo.setAttribute('aria-hidden', 'true');
+      const maxBin = Math.max(...col.stats.histogram);
+      const width = (col.stats.max - col.stats.min) / 10;
+      col.stats.histogram.forEach((count, b) => {
+        const bar = document.createElement('i');
+        bar.style.height = `${Math.max(6, count / maxBin * 100)}%`;
+        bar.title = `${fmtDec(col.stats.min + b * width)}…: ${fmt(count)}`;
+        histo.append(bar);
+      });
+      item.append(histo);
+    }
     root.append(item);
   }
 }
@@ -420,7 +434,22 @@ $('#exportBtn').addEventListener('click', () => {
 const cleanBtn = $('#cleanBtn');
 if (cleanBtn) cleanBtn.addEventListener('click', () => {
   if (!result) return;
-  downloadCsv(makeCleanCsv(result), `datacheck_sin_duplicados_${Date.now()}.csv`);
+  // Corrección guiada: las opciones marcadas por el usuario, ninguna
+  // corrección silenciosa (los espacios ya se recortan al analizar).
+  const options = {
+    removeEmptyRows: $('#optEmptyRows')?.checked ?? false,
+    placeholdersToEmpty: $('#optPlaceholders')?.checked ?? false,
+    datesToIso: $('#optDatesIso')?.checked ?? false,
+    removeNearDuplicates: $('#optNearDup')?.checked ?? false
+  };
+  downloadCsv(makeCleanCsv(result, options), `datacheck_limpio_${Date.now()}.csv`);
+});
+const cleanOptionsBtn = $('#cleanOptionsBtn');
+if (cleanOptionsBtn) cleanOptionsBtn.addEventListener('click', () => {
+  const panel = $('#cleanOptions');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  cleanOptionsBtn.setAttribute('aria-expanded', String(!panel.hidden));
 });
 
 /* ---------- Esquema definido por el usuario ---------- */

@@ -69,7 +69,14 @@
     </section>
 
     <section class="results" aria-labelledby="result-title">
-      <div class="section-top results-heading"><div><span class="section-index">02 / DIAGNÓSTICO</span><h2 id="result-title">Resumen de calidad</h2></div><div class="actions"><button id="cleanBtn" type="button" class="button button-secondary" disabled>↓ CSV sin duplicados</button><button id="exportBtn" type="button" class="button button-primary" disabled>↓ Descargar informe CSV</button></div></div>
+      <div class="section-top results-heading"><div><span class="section-index">02 / DIAGNÓSTICO</span><h2 id="result-title">Resumen de calidad</h2></div><div class="actions"><button id="cleanBtn" type="button" class="button button-secondary" disabled>↓ CSV limpio</button><button id="cleanOptionsBtn" type="button" class="button button-ghost" aria-expanded="false">Opciones de limpieza</button><button id="exportBtn" type="button" class="button button-primary" disabled>↓ Descargar informe CSV</button></div></div>
+      <div id="cleanOptions" class="clean-options" hidden>
+        <label><input type="checkbox" id="optEmptyRows" /> Quitar registros totalmente vacíos</label>
+        <label><input type="checkbox" id="optPlaceholders" /> Convertir pseudo-vacíos («N/A», «null»…) en celdas vacías</label>
+        <label><input type="checkbox" id="optDatesIso" /> Normalizar fechas a AAAA-MM-DD</label>
+        <label><input type="checkbox" id="optNearDup" /> Quitar también las casi duplicadas</label>
+        <span class="clean-note">Las duplicadas exactas siempre se quitan y los espacios en los bordes ya se recortan al analizar.</span>
+      </div>
       <div class="stats">
         <article class="stat-card"><span>Registros analizados</span><strong id="statRows">—</strong><small>Total de filas de datos</small></article>
         <article class="stat-card"><span>Columnas</span><strong id="statCols">—</strong><small>Campos detectados</small></article>

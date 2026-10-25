@@ -8,7 +8,7 @@ Importa un archivo CSV y detecta en segundos celdas vacías, filas duplicadas, t
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-m%C3%B3dulos_ES-F7DF1E?logo=javascript&logoColor=black)
 ![Dependencias](https://img.shields.io/badge/dependencias-0-2ea44f)
-![Tests](https://img.shields.io/badge/tests-33_superados-2ea44f)
+![Tests](https://img.shields.io/badge/tests-35_superados-2ea44f)
 ![Privacidad](https://img.shields.io/badge/privacidad-100%25_local-0969da)
 ![Temas](https://img.shields.io/badge/temas-claro_y_oscuro-8250df)
 
@@ -70,6 +70,7 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 | Valores atípicos | Números fuera del rango habitual de su columna (método del rango intercuartílico): el clásico «cero de más» en un importe. |
 | Valores frecuentes | Los valores que más se repiten en cada columna, con su conteo. |
 | Colisiones de clave | Valores repetidos en una columna casi única (≥ 90 % distintos) que parece un identificador: el mismo ID con datos distintos, que la fila duplicada entera no detecta. |
+| Histograma | Mini-gráfico de distribución en las columnas numéricas: de un vistazo se ve si los importes se concentran o hay un grupo apartado. |
 | Codificación dañada | Avisa si el archivo viene en Windows-1252 (típico de Excel; se interpreta correctamente) y cuenta celdas con mojibake, el texto dañado por doble codificación (`Ã±` en vez de `ñ`). |
 | Espacios en los bordes | Celdas con espacios al inicio o al final, una causa silenciosa de duplicados y cruces fallidos. |
 | Valores únicos | Cuántos valores distintos tiene cada columna. |
@@ -215,7 +216,7 @@ La lógica y la carga de archivos cuentan con pruebas automáticas (Node 18+, si
 npm test
 ```
 
-Son **33 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
+Son **35 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
 
 ## Uso de GitHub Copilot
 
