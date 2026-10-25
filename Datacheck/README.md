@@ -71,6 +71,7 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 | Valores atípicos | Números fuera del rango habitual de su columna (método del rango intercuartílico): el clásico «cero de más» en un importe. |
 | Valores frecuentes | Los valores que más se repiten en cada columna, con su conteo. |
 | Colisiones de clave | Valores repetidos en una columna casi única (≥ 90 % distintos) que parece un identificador: el mismo ID con datos distintos, que la fila duplicada entera no detecta. |
+| Columna constante | Una columna donde todas las filas traen el mismo valor: suele ser una columna olvidada o un error de exportación. |
 | Histograma | Mini-gráfico de distribución en las columnas numéricas: de un vistazo se ve si los importes se concentran o hay un grupo apartado. |
 | Codificación dañada | Avisa si el archivo viene en Windows-1252 (típico de Excel; se interpreta correctamente) y cuenta celdas con mojibake, el texto dañado por doble codificación (`Ã±` en vez de `ñ`). |
 | Espacios en los bordes | Celdas con espacios al inicio o al final, una causa silenciosa de duplicados y cruces fallidos. |
@@ -84,7 +85,8 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 
 ### 🧾 Esquema definido por el usuario
 
-- **Tus reglas, no solo las genéricas**: por columna puedes exigir tipo esperado, que sea requerida, que sea única, un patrón (expresión regular), un rango mínimo/máximo o una lista de valores permitidos.
+- **Tus reglas, no solo las genéricas**: por columna puedes exigir tipo esperado, que sea requerida, que sea única, un patrón (expresión regular), un rango mínimo/máximo, una longitud mínima/máxima del texto o una lista de valores permitidos.
+- **Reglas entre columnas**: compara dos columnas fila a fila («la fecha de fin no es anterior a la de inicio») o exige una cuenta («el total es el precio por la cantidad»). Las comparaciones de importes admiten 0,01 de diferencia por redondeo, y el resumen declara cuántas filas se pudieron evaluar. _Nota: las versiones anteriores de DataCheck ignoran estas reglas si les compartes un esquema nuevo._
 - **Violaciones visibles**: conteo por columna, resumen total, etiqueta «Esquema» en la vista previa y un filtro para ver solo las filas que no cumplen.
 - **Reutilizable**: el esquema se conserva entre cargas (valida cada mes el mismo reporte), se puede **generar desde un archivo que está bien** para usarlo de plantilla, y descargarse o cargarse como **JSON**.
 
@@ -97,6 +99,7 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 ### ⬇️ Exportación
 
 - **Informe CSV** con los indicadores generales, el puntaje y las estadísticas por columna (incluido el tipo detectado), listo para adjuntar a una entrega o compartir con el equipo.
+- **Informe JSON** (versión 1 del formato): el mismo contenido —resumen, columnas con sus estadísticas y, si validaste, el resultado del esquema con sus reglas entre columnas— listo para procesar con otros programas.
 - **CSV limpio con corrección guiada**: copia sin filas duplicadas exactas y, solo si marcas las opciones, también sin casi duplicadas ni registros vacíos, con los pseudo-vacíos convertidos en celdas vacías y las fechas normalizadas a `AAAA-MM-DD`. Ninguna corrección se aplica en silencio.
 - Ambas exportaciones **protegen las celdas que empiezan con `=`, `+`, `-`, `@`, `|` o `%`** para que no se ejecuten como fórmulas al abrirlas en una hoja de cálculo.
 
@@ -125,6 +128,7 @@ Matriz de capacidades contra las referencias del rubro (investigación de octubr
 | Codificación: rescata Windows-1252 y detecta mojibake | ✓ | — | — | Parcial | Parcial | Parcial | — | — |
 | Esquema definido por el usuario | ✓ | — | — | ✓ | — | ✓ | — | ✓ |
 | Esquema generado desde el propio archivo | ✓ | — | — | — | — | ✓ | — | Parcial |
+| Reglas entre columnas (comparar dos columnas, con un factor opcional) | ✓ | — | — | — | — | — | — | ✓ |
 | Diff entre dos archivos por columna clave | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
 | Corrección guiada (descarga limpia con opciones) | ✓ | ✓ | — | — | ✓ | ✓ | — | — |
 | Casi duplicadas por normalización (mayúsculas/espacios) | ✓ | — | — | — | Parcial | — | Parcial | — |
@@ -138,7 +142,7 @@ Matriz de capacidades contra las referencias del rubro (investigación de octubr
 
 - **Es la única de navegador con el paquete completo a la vez**: estadísticas con mediana y desvío (las demás de navegador solo dan mín/máx/media), atípicos por IQR, histograma, colisiones de clave, esquema, diff y corrección guiada — abierta, gratuita y en español.
 - **La codificación**: es la única que *rescata* el archivo en Windows-1252 de Excel y le pone nombre al mojibake; CSVLint lo marca como error, pero el archivo se sube a su servidor y no hay rescate.
-- **El esquema pensado para el uso mensual**: se genera desde el archivo que está bien, **se conserva entre cargas** y viaja en un JSON; entre las de navegador verificadas, nadie más lo hace.
+- **El esquema pensado para el uso mensual**: se genera desde el archivo que está bien, **se conserva entre cargas** y viaja en un JSON; entre las de navegador verificadas, nadie más lo hace, ni trae reglas entre columnas.
 - **Hallazgos sin configurar nada**: casi duplicadas por normalización y pseudo-vacíos detectados de fábrica, sin escribir una regla.
 
 ### Dónde ganan las profesionales (y DataCheck no compite)
@@ -285,10 +289,7 @@ El examen requiere demostrar el **uso real** de GitHub Copilot para apoyar el de
 
 ## Ideas futuras
 
-- Reglas **entre columnas** en el esquema (por ejemplo, que la fecha de fin no sea anterior a la de inicio, o que un total coincida con precio × cantidad).
-- Longitud mínima/máxima de texto como regla del esquema (hoy el rango mín/máx es solo numérico).
-- Alerta de **columna constante** (todos los valores iguales: suele ser una columna olvidada o un error de exportación).
-- Informe de resultados también en **JSON**, además del CSV.
+- Reglas entre columnas con constantes escritas a mano (p. ej. «la fecha de fin, como máximo 30 días después de la de inicio»).
 - Detectar el separador `|` además de coma, punto y coma y tabulación.
 
 ## Referencias
