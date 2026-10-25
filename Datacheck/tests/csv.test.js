@@ -144,6 +144,26 @@ test('Clasifica formatos numéricos y de fecha habituales', () => {
   assert.equal(classifyCell('hola'), 'texto');
 });
 
+test('Más de 20 000 filas da el error amable, no un RangeError', () => {
+  // Regresión: el ancho se calculaba con Math.max(...filas) y un archivo
+  // de ~600 KB con filas cortas reventaba la pila antes del chequeo.
+  assert.throws(() => analyzeCsv('a,b\n' + '1,2\n'.repeat(150000)), /20 000 registros/);
+  assert.doesNotThrow(() => analyzeCsv('a\n' + '1\n'.repeat(20000)));
+});
+
+test('Acepta fechas de años menores a 100 y rechaza sus imposibles', () => {
+  assert.equal(classifyCell('0001-01-01'), 'fecha');
+  assert.equal(classifyCell('0099-05-05'), 'fecha');
+  assert.equal(classifyCell('0099-02-29'), 'texto'); // el año 99 no es bisiesto
+});
+
+test('Cuenta un encabezado que choca con una etiqueta generada como duplicado', () => {
+  const a = analyzeCsv(',Columna 1\n1,2');
+  assert.deepEqual(a.headers, ['Columna 1', 'Columna 1 (2)']);
+  assert.equal(a.emptyHeaders, 1);
+  assert.equal(a.duplicateHeaders, 1);
+});
+
 test('Resuelve encabezados repetidos', () => {
   const a = analyzeCsv('id,id,\n1,2,3');
   assert.deepEqual(a.headers, ['id', 'id (2)', 'Columna 3']);

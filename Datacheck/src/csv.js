@@ -65,7 +65,9 @@ function isDateValue(value) {
   else { day = +match[1]; month = +match[2]; year = +match[3]; }
   if (month < 1 || month > 12 || day < 1 || day > 31) return false;
   // Verificación real: 31/02 se convierte en 3/03 y no coincide → no es fecha.
-  const date = new Date(Date.UTC(year, month - 1, day));
+  // setUTCFullYear usa el año tal cual; Date.UTC mapearía 0–99 a 1900+año.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
@@ -114,22 +116,24 @@ export function analyzeCsv(source) {
   const delimiter = detectDelimiter(source);
   const parsed = parseDelimited(source, delimiter);
   if (parsed.length < 2) throw new Error('El archivo debe incluir encabezados y al menos un registro.');
-  const count = Math.max(...parsed.map(row => row.length));
+  if (parsed.length - 1 > 20000) throw new Error('Se admiten hasta 20 000 registros por archivo.');
+  // Ancho máximo con un bucle: Math.max(...parsed) revienta la pila
+  // (RangeError) en archivos con cientos de miles de filas chicas.
+  let count = 0;
+  for (const row of parsed) if (row.length > count) count = row.length;
   if (count > 200) throw new Error('El archivo tiene más de 200 columnas. Usa un archivo más pequeño.');
   const headers = uniqueHeaders(parsed[0], count);
   const headerWidth = parsed[0].length;
-  // Avisos de encabezado: hoy los duplicados y vacíos se renombran en
-  // silencio; se cuentan para poder reportarlos (la colisión es sin
-  // distinguir mayúsculas, igual que en uniqueHeaders).
-  const seenHeaders = new Set();
+  // Avisos de encabezado: un encabezado cuenta como duplicado si su
+  // etiqueta final difiere del texto original (fue renombrado), incluidos
+  // los choques contra las etiquetas «Columna N» de los vacíos.
   let duplicateHeaders = 0;
   let emptyHeaders = 0;
-  for (const cell of parsed[0]) {
+  parsed[0].forEach((cell, i) => {
     const base = (cell || '').trim();
-    if (base === '') { emptyHeaders++; continue; }
-    if (seenHeaders.has(base.toLowerCase())) duplicateHeaders++;
-    seenHeaders.add(base.toLowerCase());
-  }
+    if (base === '') emptyHeaders++;
+    else if (headers[i] !== base) duplicateHeaders++;
+  });
   const keys = new Set();
   const normKeys = new Set();
   let emptyCells = 0;
@@ -181,7 +185,6 @@ export function analyzeCsv(source) {
     normKeys.add(normFingerprint);
     return { number: index + 1, cells, incomplete: blanks > 0, duplicate: isDuplicate, irregular, nearDuplicate: isNearDuplicate };
   });
-  if (rows.length > 20000) throw new Error('Se admiten hasta 20 000 registros por archivo.');
   // Tipo de columna: el dominante si cubre al menos el 80 % de las celdas
   // clasificadas. En columnas de texto o mixtas no se marcan diferencias.
   let typeMismatchCells = 0;
@@ -237,9 +240,10 @@ export function csvCell(value) {
 }
 
 /**
- * Genera un CSV con los datos originales pero sin filas duplicadas
- * (conserva la primera aparición de cada fila). Usa el delimitador
- * detectado en el archivo de origen y celdas protegidas con csvCell.
+ * Genera un CSV sin filas duplicadas (conserva la primera aparición de
+ * cada fila). Exporta los valores ya analizados —recortados y al ancho
+ * completo de columnas—, no el texto crudo del archivo, con el
+ * delimitador detectado en el origen y celdas protegidas con csvCell.
  */
 export function makeCleanCsv(analysis) {
   const kept = analysis.rows.filter(row => !row.duplicate);
