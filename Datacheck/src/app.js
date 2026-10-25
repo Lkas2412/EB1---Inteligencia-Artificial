@@ -642,16 +642,22 @@ function populateDiffKeys() {
   const common = result.headers.filter(h => diffOther.headers.includes(h));
   select.replaceChildren();
   let best = null;
-  let bestRatio = -1;
+  let bestScore = -1;
   for (const h of common) {
     const opt = document.createElement('option');
     opt.value = h;
     opt.textContent = h;
     select.append(opt);
-    // Clave sugerida: la columna común más única del archivo base.
+    // Clave sugerida: primero las que parecen identificadores (nombre
+    // tipo id/clave/código, o columna de texto/correo) y, a igual
+    // clase, la más única. Sin la clase, una columna de importes
+    // 100 % única ganaba siempre al ID con un repetido legítimo.
     const col = result.columns[result.headers.indexOf(h)];
     const ratio = col.unique / ((result.rows.length - col.empty) || 1);
-    if (ratio > bestRatio) { bestRatio = ratio; best = h; }
+    const nameHint = /id|clave|codigo|código|code|dni|documento/i.test(h) ? 2 : 0;
+    const typeScore = col.type === 'numero' || col.type === 'fecha' ? 0 : 1;
+    const score = nameHint + typeScore + ratio;
+    if (score > bestScore) { bestScore = score; best = h; }
   }
   if (best) select.value = best;
   const run = $('#diffRun');

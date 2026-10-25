@@ -8,7 +8,7 @@ Importa un archivo CSV y detecta en segundos celdas vacías, filas duplicadas, t
 
 ![JavaScript](https://img.shields.io/badge/JavaScript-m%C3%B3dulos_ES-F7DF1E?logo=javascript&logoColor=black)
 ![Dependencias](https://img.shields.io/badge/dependencias-0-2ea44f)
-![Tests](https://img.shields.io/badge/tests-37_superados-2ea44f)
+![Tests](https://img.shields.io/badge/tests-45_superados-2ea44f)
 ![Privacidad](https://img.shields.io/badge/privacidad-100%25_local-0969da)
 ![Temas](https://img.shields.io/badge/temas-claro_y_oscuro-8250df)
 
@@ -222,7 +222,7 @@ La lógica y la carga de archivos cuentan con pruebas automáticas (Node 18+, si
 npm test
 ```
 
-Son **37 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
+Son **45 pruebas** que cubren el parser (delimitadores, comillas, límites), cada chequeo de calidad, la inferencia de tipos, las exportaciones y el flujo de carga de la interfaz, incluidos los casos de error.
 
 ## Uso de GitHub Copilot
 

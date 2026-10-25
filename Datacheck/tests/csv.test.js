@@ -333,6 +333,8 @@ test('La comparación cuenta las claves vacías o repetidas que no puede reconci
   const d = diffAnalyses(base, other, 'id');
   assert.equal(d.ignoredBase, 2);
   assert.equal(d.changed.length, 0);
+  // El informe descargable también cuenta las claves no reconciliables.
+  assert.match(makeDiffReport(d), /no reconciliables/);
 });
 
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {

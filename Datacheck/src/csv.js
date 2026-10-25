@@ -548,6 +548,7 @@ export function makeDiffReport(diff) {
   const records = [
     ['Tipo', 'Clave', 'Columna', 'Antes', 'Después'],
     ['Resumen', diff.keyName, '', `${diff.baseRows} filas (archivo base)`, `${diff.otherRows} filas (otro archivo)`],
+    ['Resumen', '', 'Claves no reconciliables (vacías o repetidas)', `${diff.ignoredBase ?? 0} en el archivo base`, `${diff.ignoredOther ?? 0} en el otro archivo`],
     ...diff.added.map(e => ['Agregada', e.key, '', '', '']),
     ...diff.removed.map(e => ['Eliminada', e.key, '', '', '']),
     ...diff.changed.flatMap(e => e.changes.map(c => ['Modificada', e.key, c.column, c.from, c.to])),
