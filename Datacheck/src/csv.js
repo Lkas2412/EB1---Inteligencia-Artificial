@@ -367,6 +367,68 @@ export function makeCleanCsv(analysis) {
   return '\uFEFF' + lines.map(line => line.map(csvCell).join(analysis.delimiter)).join('\r\n');
 }
 
+/**
+ * Valida el análisis contra un esquema definido por el usuario:
+ * `{ columns: { nombre: { type, required, unique, pattern, min, max, values } } }`.
+ * Las reglas se aplican por nombre de columna (las etiquetas ya únicas del
+ * análisis). Devuelve el total de violaciones, el detalle por columna, el
+ * conjunto de filas afectadas y los errores del propio esquema (p. ej. un
+ * patrón regex inválido), sin lanzar excepciones por datos del usuario.
+ */
+export function validateSchema(analysis, schema) {
+  const rules = schema?.columns ?? {};
+  const perColumn = [];
+  const rowViolations = new Set();
+  const errors = [];
+  let total = 0;
+  for (const [name, rule] of Object.entries(rules)) {
+    const j = analysis.headers.indexOf(name);
+    if (j === -1) { perColumn.push({ name, count: 1, missing: true }); total += 1; continue; }
+    let regex = null;
+    if (rule.pattern) {
+      try { regex = new RegExp(rule.pattern); }
+      catch { errors.push(`Patrón inválido en la columna «${name}»: ${rule.pattern}`); }
+    }
+    const seen = new Set();
+    let count = 0;
+    analysis.rows.forEach((row, i) => {
+      const value = row.cells[j];
+      let bad = false;
+      if (value === '') { if (rule.required) bad = true; }
+      else {
+        if (rule.type && rule.type !== 'cualquiera' && classifyCell(value) !== rule.type) bad = true;
+        if (rule.unique) { if (seen.has(value)) bad = true; seen.add(value); }
+        if (regex && !regex.test(value)) bad = true;
+        if (rule.values?.length && !rule.values.includes(value)) bad = true;
+        if (rule.min !== undefined && rule.min !== null && rule.min !== '') { const n = parseNumberValue(value); if (n === null || n < Number(rule.min)) bad = true; }
+        if (rule.max !== undefined && rule.max !== null && rule.max !== '') { const n = parseNumberValue(value); if (n === null || n > Number(rule.max)) bad = true; }
+      }
+      if (bad) { count++; rowViolations.add(i); }
+    });
+    if (count) perColumn.push({ name, count });
+    total += count;
+  }
+  return { total, perColumn, rowViolations, errors };
+}
+
+/**
+ * Genera un esquema inicial desde el propio archivo: tipo detectado,
+ * requerida si la columna no tiene vacíos y única si hoy no se repite
+ * ningún valor. Pensado para «este archivo está bien: úsalo de plantilla».
+ */
+export function generateSchema(analysis) {
+  const columns = {};
+  for (const col of analysis.columns) {
+    const rule = {};
+    if (col.type && !['texto', 'vacio', 'mixto'].includes(col.type)) rule.type = col.type;
+    if (col.empty === 0 && analysis.rows.length) rule.required = true;
+    const classified = analysis.rows.length - col.empty - (col.placeholder ?? 0);
+    if (classified > 0 && col.unique === classified) rule.unique = true;
+    if (Object.keys(rule).length) columns[col.name] = rule;
+  }
+  return { version: 1, columns };
+}
+
 export function makeReport(analysis, filename) {
   const num = v => String(Number(v.toFixed(2)));
   const records = [

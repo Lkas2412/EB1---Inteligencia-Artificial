@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell, decodeCsvData } from '../src/csv.js';
+import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell, decodeCsvData, validateSchema, generateSchema } from '../src/csv.js';
 
 test('Lee CSV con comas entre comillas y comillas escapadas', () => {
   const rows = parseDelimited('nombre,nota\n"Ana, María","Dijo ""hola"""');
@@ -197,6 +197,37 @@ test('Decodifica UTF-8 y rescata Windows-1252 avisando la codificación', () => 
 test('Cuenta celdas con mojibake (texto dañado por doble codificación)', () => {
   const a = analyzeCsv('nombre\nJosÃ©\nMarÃ­a\nAna');
   assert.equal(a.mojibakeCells, 2);
+});
+
+test('Valida un archivo contra un esquema definido por el usuario', () => {
+  const a = analyzeCsv('id,correo,monto\n1,ana@example.com,100\n2,sin-arroba,250\n2,luis@example.com,99999\n,mal@,50');
+  const r = validateSchema(a, { columns: {
+    id: { required: true, unique: true },
+    correo: { type: 'correo' },
+    monto: { type: 'numero', min: 0, max: 1000 }
+  }});
+  // id: repetido (fila 3) + vacío requerido (fila 4) = 2 · correo: filas 2 y 4 = 2 · monto: 99999 fuera de rango = 1
+  assert.equal(r.total, 5);
+  assert.deepEqual(r.perColumn.map(c => [c.name, c.count]), [['id', 2], ['correo', 2], ['monto', 1]]);
+  assert.ok(r.rowViolations.has(1) && r.rowViolations.has(2) && r.rowViolations.has(3));
+  assert.equal(r.rowViolations.has(0), false);
+});
+
+test('El esquema reporta columnas ausentes y patrones inválidos sin romperse', () => {
+  const a = analyzeCsv('a\n1');
+  const r = validateSchema(a, { columns: { fantasma: { required: true }, a: { pattern: '([' } } });
+  assert.equal(r.total, 1);
+  assert.equal(r.perColumn[0].missing, true);
+  assert.equal(r.errors.length, 1);
+});
+
+test('Genera un esquema desde el propio archivo y ese archivo lo cumple', () => {
+  const a = analyzeCsv('id,correo,nota\n1,ana@example.com,x\n2,luis@example.com,y');
+  const s = generateSchema(a);
+  assert.equal(s.columns.id.required, true);
+  assert.equal(s.columns.id.unique, true);
+  assert.equal(s.columns.correo.type, 'correo');
+  assert.equal(validateSchema(a, s).total, 0);
 });
 
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {

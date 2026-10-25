@@ -1,4 +1,4 @@
-import { analyzeCsv, makeReport, makeCleanCsv, decodeCsvData } from './csv.js';
+import { analyzeCsv, makeReport, makeCleanCsv, decodeCsvData, validateSchema, generateSchema } from './csv.js';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const $ = selector => document.querySelector(selector);
@@ -6,6 +6,8 @@ const $all = selector => Array.from(document.querySelectorAll(selector));
 let result = null;
 let currentFilename = '';
 let currentEncoding = 'utf-8';
+let schema = null;
+let schemaRowRefs = [];
 let activeFilter = 'all';
 // Token de generación: cada carga o limpieza lo incrementa y las
 // escrituras asíncronas pendientes (animación, lecturas de archivo)
@@ -117,6 +119,13 @@ function loadData(text, name) {
     setFilter('all');
     renderSummary();
     renderColumns();
+    const schemaPanel = $('#schemaPanel');
+    if (schemaPanel) {
+      schemaPanel.hidden = false;
+      buildSchemaEditor();
+      // El esquema se conserva entre cargas: si hay uno, se aplica solo.
+      if (schema) applySchemaValidation();
+    }
   } catch (error) {
     clearAnalysis();
     alertMessage(error instanceof Error ? error.message : 'No se pudo analizar el archivo.');
@@ -127,6 +136,12 @@ function clearAnalysis() {
   loadGeneration++;
   result = null;
   currentEncoding = 'utf-8';
+  const schemaPanelOff = $('#schemaPanel');
+  if (schemaPanelOff) schemaPanelOff.hidden = true;
+  const schemaFilterOff = $('#schemaFilter');
+  if (schemaFilterOff) schemaFilterOff.hidden = true;
+  const schemaSummaryOff = $('#schemaSummary');
+  if (schemaSummaryOff) schemaSummaryOff.hidden = true;
   currentFilename = '';
   input.value = '';
   activeFilter = 'all';
@@ -300,7 +315,12 @@ function setFilter(next) {
 
 function renderPreview() {
   if (!result) return;
-  const selected = result.rows.filter(row => activeFilter === 'all' || (activeFilter === 'incomplete' ? row.incomplete : row.duplicate));
+  const selected = result.rows.filter(row => {
+    if (activeFilter === 'incomplete') return row.incomplete;
+    if (activeFilter === 'duplicates') return row.duplicate;
+    if (activeFilter === 'schema') return row.schemaViolation;
+    return true;
+  });
   $('#previewCount').textContent = `${fmt(selected.length)} registros`;
   const wrap = $('#tableWrap');
   wrap.replaceChildren();
@@ -337,8 +357,8 @@ function renderPreview() {
     }
     const status = document.createElement('td');
     const tag = document.createElement('span');
-    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.nearDuplicate ? 'near' : row.typeMismatch ? 'type' : row.outlier ? 'outlier' : row.incomplete ? 'incomplete' : 'ok'}`;
-    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.nearDuplicate ? 'Casi duplicada' : row.typeMismatch ? 'Tipo distinto' : row.outlier ? 'Atípico' : row.incomplete ? 'Incompleta' : 'Correcta';
+    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.nearDuplicate ? 'near' : row.schemaViolation ? 'schema' : row.typeMismatch ? 'type' : row.outlier ? 'outlier' : row.incomplete ? 'incomplete' : 'ok'}`;
+    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.nearDuplicate ? 'Casi duplicada' : row.schemaViolation ? 'Esquema' : row.typeMismatch ? 'Tipo distinto' : row.outlier ? 'Atípico' : row.incomplete ? 'Incompleta' : 'Correcta';
     status.append(tag);
     tr.append(status);
     tbody.append(tr);
@@ -401,6 +421,160 @@ const cleanBtn = $('#cleanBtn');
 if (cleanBtn) cleanBtn.addEventListener('click', () => {
   if (!result) return;
   downloadCsv(makeCleanCsv(result), `datacheck_sin_duplicados_${Date.now()}.csv`);
+});
+
+/* ---------- Esquema definido por el usuario ---------- */
+const SCHEMA_TYPES = [['cualquiera', 'Cualquiera'], ['numero', 'Número'], ['fecha', 'Fecha'], ['correo', 'Correo'], ['booleano', 'Booleano'], ['texto', 'Texto']];
+
+function buildSchemaEditor() {
+  const body = $('#schemaBody');
+  if (!body || !result) return;
+  body.replaceChildren();
+  schemaRowRefs = [];
+  for (const col of result.columns) {
+    const rule = schema?.columns?.[col.name] ?? {};
+    const tr = document.createElement('tr');
+    const nameTd = document.createElement('td');
+    nameTd.textContent = col.name;
+    nameTd.title = col.name;
+    const typeSel = document.createElement('select');
+    for (const [value, label] of SCHEMA_TYPES) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      typeSel.append(opt);
+    }
+    typeSel.value = rule.type ?? 'cualquiera';
+    const typeTd = document.createElement('td');
+    typeTd.append(typeSel);
+    const mkCheck = checked => {
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = !!checked;
+      const td = document.createElement('td');
+      td.append(input);
+      return [td, input];
+    };
+    const [reqTd, reqInput] = mkCheck(rule.required);
+    const [uniqTd, uniqInput] = mkCheck(rule.unique);
+    const mkText = value => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = value ?? '';
+      const td = document.createElement('td');
+      td.append(input);
+      return [td, input];
+    };
+    const [patTd, patInput] = mkText(rule.pattern);
+    const [minTd, minInput] = mkText(rule.min);
+    const [maxTd, maxInput] = mkText(rule.max);
+    const [valsTd, valsInput] = mkText(rule.values?.join(', '));
+    const resultTd = document.createElement('td');
+    resultTd.className = 'schema-result';
+    resultTd.textContent = '—';
+    tr.append(nameTd, typeTd, reqTd, uniqTd, patTd, minTd, maxTd, valsTd, resultTd);
+    body.append(tr);
+    schemaRowRefs.push({ name: col.name, type: typeSel, required: reqInput, unique: uniqInput, pattern: patInput, min: minInput, max: maxInput, values: valsInput, resultCell: resultTd });
+  }
+}
+
+function readSchemaFromEditor() {
+  const columns = {};
+  for (const ref of schemaRowRefs) {
+    const rule = {};
+    if (ref.type.value !== 'cualquiera') rule.type = ref.type.value;
+    if (ref.required.checked) rule.required = true;
+    if (ref.unique.checked) rule.unique = true;
+    const pattern = ref.pattern.value.trim();
+    if (pattern) rule.pattern = pattern;
+    for (const key of ['min', 'max']) {
+      const raw = ref[key].value.trim();
+      if (raw) { const n = Number(raw.replace(',', '.')); if (!Number.isNaN(n)) rule[key] = n; }
+    }
+    const values = ref.values.value.split(',').map(v => v.trim()).filter(Boolean);
+    if (values.length) rule.values = values;
+    if (Object.keys(rule).length) columns[ref.name] = rule;
+  }
+  return { version: 1, columns };
+}
+
+function applySchemaValidation() {
+  if (!result) return;
+  schema = readSchemaFromEditor();
+  const summary = $('#schemaSummary');
+  const filterBtn = $('#schemaFilter');
+  if (!Object.keys(schema.columns).length) {
+    result.rows.forEach(row => { row.schemaViolation = false; });
+    for (const ref of schemaRowRefs) { ref.resultCell.textContent = '—'; ref.resultCell.classList.remove('ok'); }
+    if (filterBtn) filterBtn.hidden = true;
+    if (summary) { summary.hidden = false; summary.textContent = 'Todavía no definiste reglas: completa al menos una fila (o pulsa «Generar desde este archivo») y vuelve a validar.'; }
+    if (activeFilter === 'schema') setFilter('all'); else renderPreview();
+    return;
+  }
+  const res = validateSchema(result, schema);
+  result.rows.forEach((row, i) => { row.schemaViolation = res.rowViolations.has(i); });
+  const counts = new Map(res.perColumn.map(c => [c.name, c.missing ? 'ausente' : c.count]));
+  for (const ref of schemaRowRefs) {
+    const c = counts.get(ref.name);
+    ref.resultCell.textContent = c === undefined ? '✓' : String(c);
+    ref.resultCell.classList.toggle('ok', c === undefined);
+  }
+  if (filterBtn) filterBtn.hidden = false;
+  if (summary) {
+    summary.hidden = false;
+    summary.textContent = res.errors.length
+      ? `⚠ ${res.errors.join(' ')}`
+      : res.total === 0
+        ? '✓ Sin violaciones: el archivo cumple el esquema.'
+        : `${fmt(res.total)} violaciones en ${fmt(res.perColumn.length)} columnas: ${res.perColumn.map(c => `${c.name} (${c.missing ? 'columna ausente' : fmt(c.count)})`).join(', ')}. Filtra la vista previa por «Esquema» para ver las filas.`;
+  }
+  renderPreview();
+}
+
+const schemaValidateBtn = $('#schemaValidate');
+if (schemaValidateBtn) schemaValidateBtn.addEventListener('click', applySchemaValidation);
+const schemaGenerateBtn = $('#schemaGenerate');
+if (schemaGenerateBtn) schemaGenerateBtn.addEventListener('click', () => {
+  if (!result) return;
+  schema = generateSchema(result);
+  buildSchemaEditor();
+  applySchemaValidation();
+});
+const schemaDownloadBtn = $('#schemaDownload');
+if (schemaDownloadBtn) schemaDownloadBtn.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(readSchemaFromEditor(), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'esquema-datacheck.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+});
+const schemaFileInput = $('#schemaFile');
+const schemaLoadBtn = $('#schemaLoadBtn');
+if (schemaLoadBtn && schemaFileInput) schemaLoadBtn.addEventListener('click', () => schemaFileInput.click());
+if (schemaFileInput) schemaFileInput.addEventListener('change', async () => {
+  const file = schemaFileInput.files[0];
+  schemaFileInput.value = '';
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    if (!parsed || typeof parsed !== 'object' || !parsed.columns || typeof parsed.columns !== 'object') throw new Error('formato');
+    schema = { version: 1, columns: parsed.columns };
+    buildSchemaEditor();
+    applySchemaValidation();
+  } catch { alertMessage('El archivo de esquema no es un JSON válido con la estructura esperada ({ "columns": { … } }).'); }
+});
+const schemaClearBtn = $('#schemaClear');
+if (schemaClearBtn) schemaClearBtn.addEventListener('click', () => {
+  schema = null;
+  buildSchemaEditor();
+  if (result) result.rows.forEach(row => { row.schemaViolation = false; });
+  const filterBtn = $('#schemaFilter');
+  if (filterBtn) filterBtn.hidden = true;
+  const summary = $('#schemaSummary');
+  if (summary) summary.hidden = true;
+  if (activeFilter === 'schema') setFilter('all'); else renderPreview();
 });
 
 const sortSelect = $('#sortSelect');

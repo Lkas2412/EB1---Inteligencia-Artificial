@@ -66,6 +66,8 @@
   --type-text: #14708c;
   --outlier-bg: #fce8f3;
   --outlier-text: #9d2c63;
+  --schema-bg: #e2e8f0;
+  --schema-text: #334155;
   --cell-empty-bg: #fff4e8;
   --cell-empty-text: #96600f;
   --insight-bg: #fff7e8;
@@ -146,6 +148,8 @@
   --type-text: #6fd3e7;
   --outlier-bg: #40203a;
   --outlier-text: #f79ec4;
+  --schema-bg: #263449;
+  --schema-text: #b6c6dd;
   --cell-empty-bg: #38280d;
   --cell-empty-text: #f0b25c;
   --insight-bg: #2f2410;
@@ -287,6 +291,20 @@ h2 { margin:7px 0 6px;font-size:23px;letter-spacing:-.035em; }
 .row-tag.near {background:var(--near-bg);color:var(--near-text);}
 .row-tag.type {background:var(--type-bg);color:var(--type-text);}
 .row-tag.outlier {background:var(--outlier-bg);color:var(--outlier-text);}
+.row-tag.schema {background:var(--schema-bg);color:var(--schema-text);}
+.schema-panel {margin-top:24px;}
+.schema-intro {color:var(--muted);font-size:13px;line-height:1.6;margin:2px 0 14px;}
+.schema-actions {display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+.schema-scroll {overflow-x:auto;}
+.schema-table {width:100%;border-collapse:collapse;font-size:12px;min-width:880px;}
+.schema-table th {text-align:left;color:var(--muted-2);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--border);}
+.schema-table td {padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.schema-table td:first-child {font-weight:700;}
+.schema-table select, .schema-table input[type='text'] {font:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--border-strong);border-radius:7px;background:var(--surface);color:var(--text);max-width:132px;}
+.schema-table input[type='checkbox'] {width:16px;height:16px;accent-color:var(--accent);}
+.schema-result {font-weight:700;color:var(--bad-text);}
+.schema-result.ok {color:var(--ok-text);}
+.schema-summary {margin-top:12px;font-size:13px;line-height:1.6;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;}
 .column-item .column-top {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .preview-help {font-size:11px;color:var(--faint);margin-bottom:0;line-height:1.5;}
 .empty-state {color:var(--faint);font-size:12px;line-height:1.65;padding:18px;background:var(--surface-2);border-radius:9px;}

@@ -81,8 +81,28 @@
 
     <div class="details-grid">
       <section class="panel" aria-labelledby="columns-title"><div class="panel-heading"><div><span class="section-index">03 / COMPLETITUD</span><h2 id="columns-title">Calidad por columna</h2></div><label class="sort-label">Ordenar <select id="sortSelect" class="sort-select" aria-label="Ordenar columnas"><option value="original">Original</option><option value="worst">Peores primero</option></select></label></div><div id="columnsList" class="columns-list"><p class="empty-state">Importa un archivo para visualizar el porcentaje de datos completos por columna.</p></div></section>
-      <section class="panel" aria-labelledby="preview-title"><div class="panel-heading"><div><span class="section-index">04 / REVISIÓN</span><h2 id="preview-title">Vista previa</h2></div><span id="previewCount" class="preview-count">Sin datos</span></div><div class="filters" role="group" aria-label="Filtrar registros"><button class="filter active" type="button" data-filter="all" aria-pressed="true">Todos</button><button class="filter" type="button" data-filter="incomplete" aria-pressed="false">Con vacíos</button><button class="filter" type="button" data-filter="duplicates" aria-pressed="false">Duplicados</button></div><div id="tableWrap" class="table-wrap"><p class="empty-state">Aquí podrás revisar una muestra de los registros del archivo.</p></div><p id="previewHelp" class="preview-help" hidden>Se muestran hasta 10 registros por filtro. Las celdas vacías aparecen resaltadas.</p></section>
+      <section class="panel" aria-labelledby="preview-title"><div class="panel-heading"><div><span class="section-index">04 / REVISIÓN</span><h2 id="preview-title">Vista previa</h2></div><span id="previewCount" class="preview-count">Sin datos</span></div><div class="filters" role="group" aria-label="Filtrar registros"><button class="filter active" type="button" data-filter="all" aria-pressed="true">Todos</button><button class="filter" type="button" data-filter="incomplete" aria-pressed="false">Con vacíos</button><button class="filter" type="button" data-filter="duplicates" aria-pressed="false">Duplicados</button><button class="filter" type="button" data-filter="schema" id="schemaFilter" aria-pressed="false" hidden>Esquema</button></div><div id="tableWrap" class="table-wrap"><p class="empty-state">Aquí podrás revisar una muestra de los registros del archivo.</p></div><p id="previewHelp" class="preview-help" hidden>Se muestran hasta 10 registros por filtro. Las celdas vacías aparecen resaltadas.</p></section>
     </div>
+
+    <section class="panel schema-panel" id="schemaPanel" hidden aria-labelledby="schema-title">
+      <div class="panel-heading"><div><span class="section-index">05 / ESQUEMA</span><h2 id="schema-title">Validar contra tu esquema</h2></div></div>
+      <p class="schema-intro">Define las reglas que debe cumplir cada columna y comprueba el archivo contra ellas. El esquema se conserva entre cargas —ideal para validar cada mes el mismo reporte— y puedes descargarlo como JSON para reutilizarlo o compartirlo.</p>
+      <div class="schema-actions">
+        <button class="button button-primary" type="button" id="schemaValidate">Validar contra el esquema</button>
+        <button class="button button-secondary" type="button" id="schemaGenerate">Generar desde este archivo</button>
+        <button class="button button-ghost" type="button" id="schemaDownload">↓ Esquema JSON</button>
+        <button class="button button-ghost" type="button" id="schemaLoadBtn">Cargar esquema…</button>
+        <input type="file" id="schemaFile" accept=".json,application/json" hidden />
+        <button class="button button-ghost" type="button" id="schemaClear">Quitar reglas</button>
+      </div>
+      <div class="schema-scroll">
+        <table class="schema-table">
+          <thead><tr><th>Columna</th><th>Tipo esperado</th><th>Requerida</th><th>Única</th><th>Patrón (regex)</th><th>Mín.</th><th>Máx.</th><th>Valores permitidos (coma)</th><th>Violaciones</th></tr></thead>
+          <tbody id="schemaBody"></tbody>
+        </table>
+      </div>
+      <p class="schema-summary" id="schemaSummary" hidden></p>
+    </section>
     <footer class="footer"><span><b>DataCheck</b> · Proyecto académico de Inteligencia Artificial</span><span>Los archivos se procesan localmente; no se envían a un servidor.</span></footer>
   </main>
 </body>
