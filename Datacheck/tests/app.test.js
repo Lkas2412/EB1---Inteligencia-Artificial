@@ -123,3 +123,53 @@ test('una carga CSV inválida muestra el error y limpia el análisis anterior', 
   assert.equal(filters[1].attributes['aria-pressed'], 'false');
   assert.equal(filters[2].attributes['aria-pressed'], 'false');
 });
+
+test('limpiar durante la animación de conteo no resucita las estadísticas', async t => {
+  const selectors = [
+    '#csvInput', '#dropZone', '#message', '#fileLabel', '#resetBtn', '#exportBtn',
+    '#statRows', '#statCols', '#statBlanks', '#statDuplicates', '#statBlanksSub',
+    '#insight', '#insightText', '#columnsList', '#tableWrap', '#previewCount',
+    '#previewHelp', '#selectBtn', '#demoBtn'
+  ];
+  const elements = new Map(selectors.map(selector => [selector, new FakeElement()]));
+  const filters = ['all', 'incomplete', 'duplicates'].map(filter => {
+    const button = new FakeElement();
+    button.dataset.filter = filter;
+    return button;
+  });
+  const previousDocument = globalThis.document;
+  const previousRaf = globalThis.requestAnimationFrame;
+  const rafQueue = [];
+  globalThis.document = {
+    querySelector: selector => elements.get(selector),
+    querySelectorAll: selector => selector === '[data-filter]' ? filters : [],
+    createElement: () => new FakeElement(),
+    createTextNode: text => ({ textContent: text })
+  };
+  globalThis.requestAnimationFrame = callback => { rafQueue.push(callback); return rafQueue.length; };
+  t.after(() => {
+    globalThis.document = previousDocument;
+    globalThis.requestAnimationFrame = previousRaf;
+  });
+  await import(`../src/app.js?anim=${Date.now()}`);
+
+  const input = elements.get('#csvInput');
+  const submit = async file => {
+    input.files = [file];
+    await input.listeners.change();
+    // loadFile es asíncrono (file.text()): un macrotask garantiza que el
+    // análisis terminó y que la animación de conteo quedó en curso.
+    await new Promise(resolve => setTimeout(resolve, 30));
+  };
+  await submit({ name: 'valido.csv', size: 20, text: async () => 'id,nombre\n1,Ana\n2,Luis' });
+  assert.ok(rafQueue.length > 0, 'la animación de conteo debe estar en curso');
+
+  // Llega una carga inválida dentro de la ventana de la animación (650 ms):
+  // las estadísticas quedan en — y ningún callback pendiente debe resucitarlas.
+  await submit({ name: 'invalido.csv', size: 20, text: async () => 'id,nombre\n1,"sin cerrar' });
+  assert.equal(elements.get('#statRows').textContent, '—');
+  while (rafQueue.length) rafQueue.shift()(performance.now() + 1000);
+  await new Promise(resolve => setTimeout(resolve, 800)); // cubre el timer de seguridad (710 ms)
+  assert.equal(elements.get('#statRows').textContent, '—');
+  assert.equal(elements.get('#statCols').textContent, '—');
+});

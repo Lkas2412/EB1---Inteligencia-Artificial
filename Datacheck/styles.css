@@ -15,8 +15,9 @@
   --heading: #182d52;
   --brand-text: #162a4d;
   --muted: #64748d;
-  --muted-2: #718199;
-  --faint: #9ca9ba;
+  --muted-2: #5b6d87;
+  --faint: #5f718c;
+  --brand-sub: #62718a;
   --accent: #3f70d8;
   --primary: #2563eb;
   --primary-hover: #1553db;
@@ -40,23 +41,23 @@
   --pill-text: #477159;
   --filter-bg: #f4f7fb;
   --filter-border: #e9eef6;
-  --filter-text: #708097;
+  --filter-text: #5b6d87;
   --filter-active-bg: #eaf2ff;
   --filter-active-border: #bdd4fe;
   --filter-active-text: #215bce;
   --count-bg: #edf2f9;
-  --count-text: #62718a;
+  --count-text: #5b6d87;
   --th-bg: #f4f7fc;
   --th-text: #60718b;
   --td-text: #42516b;
   --td-border: #eff2f8;
   --row-hover: #fafcff;
   --ok-bg: #e7f7ee;
-  --ok-text: #288b5c;
+  --ok-text: #1e7a4c;
   --warn-bg: #fff1de;
-  --warn-text: #a86e2f;
+  --warn-text: #8f5c1d;
   --bad-bg: #fee9eb;
-  --bad-text: #bd5667;
+  --bad-text: #a83a4e;
   --irr-bg: #efe9fe;
   --irr-text: #6d4fc2;
   --near-bg: #e3ecfe;
@@ -64,7 +65,7 @@
   --type-bg: #e0f2f7;
   --type-text: #14708c;
   --cell-empty-bg: #fff4e8;
-  --cell-empty-text: #b87930;
+  --cell-empty-text: #96600f;
   --insight-bg: #fff7e8;
   --insight-border: #f7e1b4;
   --insight-text: #785527;
@@ -77,8 +78,8 @@
   --msg-ok-bg: #eaf8f0;
   --msg-ok-border: #b6efd1;
   --msg-ok-text: #246244;
-  --file-text: #78869c;
-  --footer-text: #9ba7ba;
+  --file-text: #5f718c;
+  --footer-text: #5f718c;
   --footer-bold: #627997;
 }
 :root[data-theme='dark'] {
@@ -94,6 +95,7 @@
   --muted: #9db0d0;
   --muted-2: #93a7c9;
   --faint: #7e90b3;
+  --brand-sub: #8492aa;
   --accent: #7aa5f8;
   --primary: #4d7ef0;
   --primary-hover: #6a92f2;
@@ -162,12 +164,15 @@
 body { margin: 0; background: var(--bg); color: var(--text); transition: background-color .3s ease, color .3s ease; }
 button { font: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; }
+
+/* Foco de teclado siempre visible, en ambos temas. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .container { width: min(1192px, calc(100% - 48px)); margin: 0 auto; }
 .topbar { background: var(--surface); border-bottom: 1px solid var(--border); transition: background-color .3s ease, border-color .3s ease; }
 .topbar-inner { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 .brand { display: inline-flex; gap: 12px; align-items: center; text-decoration: none; color: var(--brand-text); font-family: 'Space Grotesk', sans-serif; font-size: 21px; font-weight: 700; line-height: 1; }
-.brand small { display: block; font-family: 'DM Sans', sans-serif; font-size: 10px; margin-top: 6px; letter-spacing: .19em; color: #8492aa; }
+.brand small { display: block; font-family: 'DM Sans', sans-serif; font-size: 10px; margin-top: 6px; letter-spacing: .19em; color: var(--brand-sub); }
 .brand-mark { width: 44px; height: 44px; background: #1959ef; color: #fff; border-radius: 14px; display: grid; place-items: center; font-size: 23px; letter-spacing: -.15em; padding-right: 4px; box-shadow: 0 6px 14px #1a54ec30; }
 .brand-mark span { font-size: 15px; transform: translate(-1px,-1px); }
 .top-pill { font-size: 12px; color: var(--pill-text); background: var(--pill-bg); border: 1px solid var(--pill-border); padding: 9px 15px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }

@@ -5,17 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="DataCheck: analiza la calidad de tus archivos CSV directamente en el navegador." />
   <title>DataCheck | Validador de calidad CSV</title>
-  <meta name="theme-color" content="#1959ef" />
+  <meta name="theme-color" content="#f4f7fc" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1322" media="(prefers-color-scheme: dark)" />
   <script>
     // Aplica el tema guardado (o el preferido del sistema) antes del primer
     // pintado para que no haya parpadeo claro/oscuro al cargar la página.
-    try {
-      var savedTheme = localStorage.getItem('datacheck-theme');
-      if (savedTheme !== 'dark' && savedTheme !== 'light') {
-        savedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      }
-      document.documentElement.dataset.theme = savedTheme;
-    } catch (e) { /* sin acceso a localStorage: se usa el tema claro */ }
+    // El acceso a localStorage va aislado: si el navegador lo bloquea, el
+    // respaldo del sistema debe poder calcularse igual.
+    var savedTheme = null;
+    try { savedTheme = localStorage.getItem('datacheck-theme'); } catch (e) { savedTheme = null; }
+    if (savedTheme !== 'dark' && savedTheme !== 'light') {
+      try { savedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+      catch (e) { savedTheme = 'light'; }
+    }
+    document.documentElement.dataset.theme = savedTheme;
   </script>
   <link rel="stylesheet" href="./styles.css" />
   <script type="module" src="./src/app.js"></script>
@@ -51,7 +54,7 @@
       <div class="section-top">
         <div><span class="section-index">01 / IMPORTACIÓN</span><h2 id="upload-title">Carga tu archivo</h2><p>Archivos .csv, máximo 5 MB. Se reconocen separadores coma, punto y coma y tabulación.</p></div>
       </div>
-      <div id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Seleccionar o arrastrar un archivo CSV">
+      <div id="dropZone" class="dropzone">
         <div class="upload-icon" aria-hidden="true">↑</div>
         <strong>Arrastra tu archivo CSV aquí</strong>
         <span>o selecciónalo desde tu equipo</span>

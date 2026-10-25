@@ -6,6 +6,10 @@ const $all = selector => Array.from(document.querySelectorAll(selector));
 let result = null;
 let currentFilename = '';
 let activeFilter = 'all';
+// Token de generación: cada carga o limpieza lo incrementa y las
+// escrituras asíncronas pendientes (animación, lecturas de archivo)
+// abortan si su generación ya no es la vigente.
+let loadGeneration = 0;
 
 const input = $('#csvInput');
 const dropZone = $('#dropZone');
@@ -32,6 +36,13 @@ function initTheme() {
   const systemDark = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     && window.matchMedia('(prefers-color-scheme: dark)').matches;
   applyTheme(saved === 'dark' || saved === 'light' ? saved : systemDark ? 'dark' : 'light');
+  // Sin preferencia guardada, la página sigue los cambios de tema del sistema.
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', event => { if (!storedTheme()) applyTheme(event.matches ? 'dark' : 'light'); });
+    }
+  }
   const toggle = $('#themeToggle');
   if (toggle) toggle.addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -59,6 +70,7 @@ function nextFrame(fn) {
 /** Cuenta de 0 al valor con easing; sin rAF o con valor 0 escribe el número final al instante. */
 function animateNumber(el, value) {
   const target = Math.round(value);
+  const generation = loadGeneration;
   const reduced = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (typeof requestAnimationFrame !== 'function' || reduced || target === 0) {
@@ -69,8 +81,13 @@ function animateNumber(el, value) {
   const start = performance.now();
   // Red de seguridad: si rAF se pausa (pestaña en segundo plano), el número
   // final se escribe igual al cumplirse la duración de la animación.
-  const settle = setTimeout(() => { el.textContent = fmt(target); }, duration + 60);
+  const settle = setTimeout(() => {
+    if (generation === loadGeneration) el.textContent = fmt(target);
+  }, duration + 60);
   const tick = now => {
+    // Si hubo otra carga o una limpieza, esta animación quedó huérfana:
+    // no debe resucitar el número sobre la pantalla ya limpia.
+    if (generation !== loadGeneration) return;
     // Clamp a [0,1]: el timestamp de rAF y performance.now() pueden diferir
     // levemente y un t negativo mostraría valores como "-0" o "-1".
     const t = Math.min(1, Math.max(0, (now - start) / duration));
@@ -94,6 +111,8 @@ function loadData(text, name) {
     const cleanBtn = $('#cleanBtn');
     if (cleanBtn) cleanBtn.disabled = false;
     clearMessage();
+    const sortEl = $('#sortSelect');
+    if (sortEl) sortEl.value = 'original'; // misma política que el filtro: cada carga arranca igual
     setFilter('all');
     renderSummary();
     renderColumns();
@@ -104,6 +123,7 @@ function loadData(text, name) {
 }
 
 function clearAnalysis() {
+  loadGeneration++;
   result = null;
   currentFilename = '';
   input.value = '';
@@ -140,8 +160,14 @@ async function loadFile(file) {
   if (!file) return;
   if (!/\.csv$/i.test(file.name)) return failLoad('Selecciona un archivo con extensión .csv.');
   if (file.size > MAX_BYTES) return failLoad('El archivo supera los 5 MB permitidos.');
-  try { loadData(await file.text(), file.name); }
-  catch { failLoad('No fue posible leer el archivo seleccionado.'); }
+  const generation = ++loadGeneration;
+  try {
+    const text = await file.text();
+    // Si mientras se leía llegó otra carga o una limpieza, este resultado
+    // quedó viejo: se descarta en vez de pisar el estado actual.
+    if (generation !== loadGeneration) return;
+    loadData(text, file.name);
+  } catch { if (generation === loadGeneration) failLoad('No fue posible leer el archivo seleccionado.'); }
 }
 
 function renderSummary() {
@@ -227,6 +253,7 @@ function renderColumns() {
 }
 
 function setFilter(next) {
+  if (!result) return;
   activeFilter = next;
   for (const button of $all('[data-filter]')) {
     const selected = button.dataset.filter === next;
@@ -242,7 +269,7 @@ function renderPreview() {
   $('#previewCount').textContent = `${fmt(selected.length)} registros`;
   const wrap = $('#tableWrap');
   wrap.replaceChildren();
-  $('#previewHelp').hidden = false;
+  $('#previewHelp').hidden = selected.length === 0;
   if (!selected.length) {
     const noRows = document.createElement('p');
     noRows.className = 'empty-state';
@@ -292,7 +319,6 @@ function reset() {
 
 $('#selectBtn').addEventListener('click', e => { e.stopPropagation(); input.click(); });
 dropZone.addEventListener('click', e => { if (e.target !== $('#selectBtn')) input.click(); });
-dropZone.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === dropZone) { e.preventDefault(); input.click(); } });
 input.addEventListener('change', () => {
   const file = input.files[0];
   // Limpiar el valor permite volver a elegir el mismo archivo: sin esto el
@@ -301,14 +327,20 @@ input.addEventListener('change', () => {
   loadFile(file);
 });
 for (const event of ['dragenter', 'dragover']) dropZone.addEventListener(event, e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-for (const event of ['dragleave', 'drop']) dropZone.addEventListener(event, e => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+// dragleave burbujea desde los hijos de la zona: solo se apaga el resaltado
+// cuando el puntero sale de verdad (si no, el fondo parpadea al arrastrar).
+dropZone.addEventListener('dragleave', e => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); });
 dropZone.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
 $('#demoBtn').addEventListener('click', async () => {
+  const generation = ++loadGeneration;
   try {
     const response = await fetch('./datos_ejemplo.csv');
     if (!response.ok) throw new Error('No se pudo abrir el ejemplo.');
-    loadData(await response.text(), 'datos_ejemplo.csv');
-  } catch { failLoad('Abre el proyecto con un servidor local (por ejemplo, Live Server de VS Code) para cargar el ejemplo.'); }
+    const text = await response.text();
+    if (generation !== loadGeneration) return;
+    loadData(text, 'datos_ejemplo.csv');
+  } catch { if (generation === loadGeneration) failLoad('Abre el proyecto con un servidor local (por ejemplo, Live Server de VS Code) para cargar el ejemplo.'); }
 });
 $('#resetBtn').addEventListener('click', reset);
 for (const button of $all('[data-filter]')) button.addEventListener('click', () => setFilter(button.dataset.filter));
