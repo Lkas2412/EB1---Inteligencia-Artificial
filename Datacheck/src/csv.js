@@ -50,6 +50,10 @@ export function parseDelimited(source, delimiter = ',') {
  */
 export function decodeCsvData(buffer) {
   const bytes = new Uint8Array(buffer);
+  // BOM de UTF-16 (Excel exporta así algunos archivos): se decodifica
+  // como tal en vez de caer a Windows-1252 y mostrar basura.
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), encoding: 'utf-16', bom: true };
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), encoding: 'utf-16', bom: true };
   const bom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF;
   const view = bom ? bytes.subarray(3) : bytes;
   try {
@@ -60,7 +64,7 @@ export function decodeCsvData(buffer) {
 }
 
 /** Secuencias típicas de texto dañado por doble codificación (mojibake). */
-const MOJIBAKE_RE = /Ã[\u0080-\u00BF]|â€|�/;
+const MOJIBAKE_RE = /Ã[\u0080-\u00BF]|Â[\u0080-\u00BF]|â[\u2000-\u206F\u20A0-\u20BF]|�/;
 
 /** Valores que suelen significar "sin dato" aunque la celda no esté vacía. */
 const PLACEHOLDER_VALUES = new Set([
@@ -189,7 +193,8 @@ export function analyzeCsv(source) {
   let irregularRows = 0;
   let paddedCells = 0;
   let placeholderCells = 0;
-  let mojibakeCells = 0;
+  // El daño de codificación también se cuenta en los encabezados.
+  let mojibakeCells = headers.filter(h => MOJIBAKE_RE.test(h)).length;
   const colEmpty = new Array(count).fill(0);
   const colPadded = new Array(count).fill(0);
   const colPlaceholder = new Array(count).fill(0);
@@ -275,16 +280,20 @@ export function analyzeCsv(source) {
       const sorted = colNums[j].map(e => e.v).sort((a, b) => a - b);
       const n = sorted.length;
       const mean = sorted.reduce((a, b) => a + b, 0) / n;
-      const std = Math.sqrt(sorted.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+      // Desvío muestral (n−1), como csvstat y Excel (STDEV.S), que es el
+      // que el usuario puede contrastar; con n=1 no hay dispersión.
+      const std = n > 1 ? Math.sqrt(sorted.reduce((a, v) => a + (v - mean) ** 2, 0) / (n - 1)) : 0;
       const q1 = quantile(sorted, 0.25);
       const q3 = quantile(sorted, 0.75);
       const iqr = q3 - q1;
+      // Cercas de Tukey estrictas: si IQR = 0 (la mitad central de los
+      // datos es un único valor), la cerca es ese punto y cualquier otro
+      // valor es atípico — justo el caso «columna constante con un
+      // importe mal cargado» que más vale avisar.
+      const low = q1 - 1.5 * iqr;
+      const high = q3 + 1.5 * iqr;
       let outliers = 0;
-      if (iqr > 0) {
-        const low = q1 - 1.5 * iqr;
-        const high = q3 + 1.5 * iqr;
-        for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
-      }
+      for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
       outlierCells += outliers;
       // Histograma de 10 rangos para dibujar la distribución en el detalle.
       let histogram = null;
@@ -389,13 +398,17 @@ function toIsoDate(value) {
 export function makeCleanCsv(analysis, options = {}) {
   let kept = analysis.rows.filter(row => !row.duplicate);
   if (options.removeNearDuplicates) kept = kept.filter(row => !row.nearDuplicate);
-  if (options.removeEmptyRows) kept = kept.filter(row => row.cells.some(cell => cell !== ''));
-  const lines = [analysis.headers, ...kept.map(row => row.cells.map(value => {
+  // Primero se transforman las celdas y DESPUÉS se quitan los registros
+  // vacíos: en el orden inverso, una fila de puros pseudo-vacíos
+  // sobrevivía como fila vacía aunque se marcaran ambas opciones.
+  const transformed = kept.map(row => row.cells.map(value => {
     let v = value;
     if (options.placeholdersToEmpty && PLACEHOLDER_VALUES.has(v.toLowerCase())) v = '';
     if (options.datesToIso && v !== '' && classifyCell(v) === 'fecha') v = toIsoDate(v);
     return v;
-  }))];
+  }));
+  const finalRows = options.removeEmptyRows ? transformed.filter(cells => cells.some(cell => cell !== '')) : transformed;
+  const lines = [analysis.headers, ...finalRows];
   return '\uFEFF' + lines.map(line => line.map(csvCell).join(analysis.delimiter)).join('\r\n');
 }
 
@@ -413,25 +426,39 @@ export function validateSchema(analysis, schema) {
   const rowViolations = new Set();
   const errors = [];
   let total = 0;
-  for (const [name, rule] of Object.entries(rules)) {
+  for (const [name, rawRule] of Object.entries(rules)) {
+    // Un JSON de esquema malformado no debe romper la validación.
+    const rule = rawRule && typeof rawRule === 'object' ? rawRule : {};
     const j = analysis.headers.indexOf(name);
     if (j === -1) { perColumn.push({ name, count: 1, missing: true }); total += 1; continue; }
     let regex = null;
     if (rule.pattern) {
-      try { regex = new RegExp(rule.pattern); }
+      // El patrón debe coincidir con el valor COMPLETO, como en
+      // Frictionless/CSVLint, no con un fragmento cualquiera.
+      try { regex = new RegExp(`^(?:${rule.pattern})$`); }
       catch { errors.push(`Patrón inválido en la columna «${name}»: ${rule.pattern}`); }
+    }
+    if (rule.values !== undefined && !Array.isArray(rule.values)) errors.push(`Valores permitidos inválidos en la columna «${name}»: debe ser una lista.`);
+    for (const key of ['min', 'max']) {
+      if (rule[key] !== undefined && rule[key] !== null && rule[key] !== '' && Number.isNaN(Number(rule[key]))) {
+        errors.push(`El ${key === 'min' ? 'mínimo' : 'máximo'} de la columna «${name}» no es un número: ${rule[key]}`);
+      }
     }
     const seen = new Set();
     let count = 0;
     analysis.rows.forEach((row, i) => {
       const value = row.cells[j];
       let bad = false;
-      if (value === '') { if (rule.required) bad = true; }
+      // Los pseudo-vacíos («N/A», «sin dato»…) cuentan como dato ausente,
+      // igual que en el resto del análisis: solo los alcanza «Requerida»
+      // y no participan de tipo, unicidad, patrón, lista ni rango.
+      const missing = value === '' || PLACEHOLDER_VALUES.has(value.toLowerCase());
+      if (missing) { if (rule.required) bad = true; }
       else {
         if (rule.type && rule.type !== 'cualquiera' && classifyCell(value) !== rule.type) bad = true;
         if (rule.unique) { if (seen.has(value)) bad = true; seen.add(value); }
         if (regex && !regex.test(value)) bad = true;
-        if (rule.values?.length && !rule.values.includes(value)) bad = true;
+        if (Array.isArray(rule.values) && rule.values.length && !rule.values.includes(value)) bad = true;
         if (rule.min !== undefined && rule.min !== null && rule.min !== '') { const n = parseNumberValue(value); if (n === null || n < Number(rule.min)) bad = true; }
         if (rule.max !== undefined && rule.max !== null && rule.max !== '') { const n = parseNumberValue(value); if (n === null || n > Number(rule.max)) bad = true; }
       }
@@ -450,14 +477,21 @@ export function validateSchema(analysis, schema) {
  */
 export function generateSchema(analysis) {
   const columns = {};
-  for (const col of analysis.columns) {
+  analysis.columns.forEach((col, j) => {
     const rule = {};
-    if (col.type && !['texto', 'vacio', 'mixto'].includes(col.type)) rule.type = col.type;
-    if (col.empty === 0 && analysis.rows.length) rule.required = true;
-    const classified = analysis.rows.length - col.empty - (col.placeholder ?? 0);
-    if (classified > 0 && col.unique === classified) rule.unique = true;
+    // Tipo solo si TODAS las celdas clasificadas coinciden: si el propio
+    // análisis ya cuenta disidentes (umbral 80 %), fijar el tipo haría
+    // que el esquema generado no lo cumpliera ni el archivo original.
+    if (col.type && !['texto', 'vacio', 'mixto'].includes(col.type) && !(col.typeMismatches > 0)) rule.type = col.type;
+    // Requerida solo sin vacíos ni pseudo-vacíos (ambos son «ausente»).
+    if (col.empty === 0 && (col.placeholder ?? 0) === 0 && analysis.rows.length) rule.required = true;
+    // Unicidad medida solo sobre valores clasificados (sin vacíos ni
+    // pseudo-vacíos): col.unique los cuenta como valores y falseaba la
+    // igualdad — el esquema salía con unique:true sobre datos repetidos.
+    const classifiedValues = analysis.rows.map(r => r.cells[j]).filter(v => v !== '' && !PLACEHOLDER_VALUES.has(v.toLowerCase()));
+    if (classifiedValues.length > 0 && new Set(classifiedValues).size === classifiedValues.length) rule.unique = true;
     if (Object.keys(rule).length) columns[col.name] = rule;
-  }
+  });
   return { version: 1, columns };
 }
 

@@ -151,6 +151,7 @@ test('Calcula estadísticas por columna y detecta atípicos por IQR', () => {
   assert.equal(col.stats.min, 10);
   assert.equal(col.stats.max, 1000);
   assert.ok(Math.abs(col.stats.mean - 1145 / 11) < 0.01);
+  assert.ok(Math.abs(col.stats.std - 297.1533) < 0.01); // desvío muestral (n−1), como Excel STDEV.S
   assert.equal(col.stats.median, 15);
   assert.equal(col.outliers, 1);
   assert.equal(a.outlierCells, 1);
@@ -162,6 +163,12 @@ test('Una columna numérica constante no marca atípicos', () => {
   const a = analyzeCsv('x\n5\n5\n5\n5');
   assert.equal(a.columns[0].outliers, 0);
   assert.equal(a.outlierCells, 0);
+});
+
+test('Con IQR = 0, un valor distinto de la constante sí es atípico (Tukey estricto)', () => {
+  const a = analyzeCsv('x\n' + [...Array(9).fill('5'), '100'].join('\n'));
+  assert.equal(a.columns[0].outliers, 1);
+  assert.equal(a.rows[9].outlier, true);
 });
 
 test('Reporta el rango de fechas y los valores frecuentes', () => {
@@ -247,6 +254,60 @@ test('La limpieza guiada aplica solo las opciones marcadas', () => {
   assert.match(plain, /15\/03\/2026/);
   const fixed = makeCleanCsv(a, { removeEmptyRows: true, placeholdersToEmpty: true, datesToIso: true, removeNearDuplicates: true });
   assert.equal(fixed, '﻿"nombre","fecha","nota"\r\n"Ana","2026-03-15",""\r\n"Luis","2026-01-05","ok"');
+});
+test('Detecta mojibake de signos (Â¡) y del euro (â‚¬), también en encabezados', () => {
+  assert.equal(analyzeCsv('precio\nâ‚¬').mojibakeCells, 1);
+  assert.equal(analyzeCsv('saludo\nÂ¡Hola!').mojibakeCells, 1);
+  assert.equal(analyzeCsv('nombrÃ©,x\nAna,1').mojibakeCells, 1);
+  assert.equal(analyzeCsv('nombre\nJosé').mojibakeCells, 0);
+});
+
+test('Decodifica UTF-16 con BOM en vez de mostrar basura', () => {
+  const text = 'nombre\nJosé';
+  const bytes = new Uint8Array(text.length * 2 + 2);
+  bytes[0] = 0xFF;
+  bytes[1] = 0xFE;
+  for (let i = 0; i < text.length; i++) { bytes[2 + i * 2] = text.charCodeAt(i) & 0xFF; bytes[3 + i * 2] = text.charCodeAt(i) >> 8; }
+  const decoded = decodeCsvData(bytes.buffer);
+  assert.equal(decoded.encoding, 'utf-16');
+  assert.equal(decoded.text, text);
+});
+
+test('El esquema generado cumple su propio invariante (regresión de auditoría)', () => {
+  // 90 % numérica con un disidente: no debe fijar type:'numero'.
+  const conDisidente = analyzeCsv('m\n1\n2\n3\n4\n5\n6\n7\n8\n9\nabc');
+  assert.equal(validateSchema(conDisidente, generateSchema(conDisidente)).total, 0);
+  // 'a','a','N/A': no debe salir unique:true por coincidencia aritmética.
+  const conPseudo = analyzeCsv('x\na\na\nN/A');
+  assert.equal(generateSchema(conPseudo).columns.x?.unique, undefined);
+  assert.equal(validateSchema(conPseudo, generateSchema(conPseudo)).total, 0);
+});
+
+test('El patrón del esquema debe coincidir con el valor completo', () => {
+  const a = analyzeCsv('codigo\n123\nabc123');
+  const r = validateSchema(a, { columns: { codigo: { pattern: '\\d+' } } });
+  assert.equal(r.total, 1);
+  assert.ok(r.rowViolations.has(1));
+});
+
+test('Un esquema malformado se reporta sin lanzar excepciones', () => {
+  const a = analyzeCsv('n\n5');
+  assert.equal(validateSchema(a, { columns: { n: null } }).total, 0);
+  const r = validateSchema(a, { columns: { n: { min: 'abc', values: 'cinco' } } });
+  assert.equal(r.errors.length, 2);
+});
+
+test('Los pseudo-vacíos cuentan como dato ausente en el esquema', () => {
+  const a = analyzeCsv('monto\n100\nN/A');
+  // «N/A» no es "otro tipo": es ausencia; sin Requerida no hay violación.
+  assert.equal(validateSchema(a, { columns: { monto: { type: 'numero' } } }).total, 0);
+  assert.equal(validateSchema(a, { columns: { monto: { required: true } } }).total, 1);
+});
+
+test('La limpieza quita la fila que queda vacía tras convertir pseudo-vacíos', () => {
+  const a = analyzeCsv('n,m\nN/A,N/A\nAna,1');
+  const out = makeCleanCsv(a, { placeholdersToEmpty: true, removeEmptyRows: true });
+  assert.equal(out.split('\r\n').length, 2);
 });
 
 test('Compara dos archivos por una columna clave', () => {

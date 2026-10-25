@@ -530,6 +530,14 @@ function readSchemaFromEditor() {
     if (values.length) rule.values = values;
     if (Object.keys(rule).length) columns[ref.name] = rule;
   }
+  // Las reglas de columnas que este archivo no tiene se conservan (p. ej.
+  // un esquema cargado pensado para otro archivo): así la validación las
+  // reporta como «columna ausente» en vez de perderlas en silencio.
+  if (schema?.columns && result) {
+    for (const [name, rule] of Object.entries(schema.columns)) {
+      if (!(name in columns) && !result.headers.includes(name)) columns[name] = rule;
+    }
+  }
   return { version: 1, columns };
 }
 
