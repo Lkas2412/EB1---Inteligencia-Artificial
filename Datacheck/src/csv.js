@@ -334,10 +334,20 @@ export function analyzeCsv(source) {
   const keyDupByCol = new Map(keyCollisions.map(k => [k.colIndex, k.values]));
   const columns = headers.map((name, colIndex) => {
     const empty = colEmpty[colIndex];
+    // Columna constante: hay datos (≥ 2 celdas no vacías) y todos repiten
+    // el mismo valor — suele ser una columna olvidada o un error de
+    // exportación. Los únicos salen de colUnique (que incluye los
+    // pseudo-vacíos), pero si el único valor ES un pseudo-vacío no cuenta
+    // como constante: esa columna ya se reporta por su propio chequeo y
+    // decir «constante: siempre N/A» sería el mismo hallazgo dos veces.
+    const soleValue = colUnique[colIndex].size === 1 ? [...colUnique[colIndex]][0] : null;
+    const constant = rows.length - empty >= 2 && soleValue !== null && !PLACEHOLDER_VALUES.has(soleValue.toLowerCase());
     return {
       name, empty, complete: rows.length - empty,
       percentage: rows.length ? (rows.length - empty) / rows.length * 100 : 0,
       unique: colUnique[colIndex].size,
+      constant,
+      constantValue: constant ? soleValue : null,
       padded: colPadded[colIndex],
       placeholder: colPlaceholder[colIndex],
       type: colTypes[colIndex].type,
@@ -414,7 +424,7 @@ export function makeCleanCsv(analysis, options = {}) {
 
 /**
  * Valida el análisis contra un esquema definido por el usuario:
- * `{ columns: { nombre: { type, required, unique, pattern, min, max, values } } }`.
+ * `{ columns: { nombre: { type, required, unique, pattern, min, max, minLength, maxLength, values } } }`.
  * Las reglas se aplican por nombre de columna (las etiquetas ya únicas del
  * análisis). Devuelve el total de violaciones, el detalle por columna, el
  * conjunto de filas afectadas y los errores del propio esquema (p. ej. un
@@ -444,6 +454,11 @@ export function validateSchema(analysis, schema) {
         errors.push(`El ${key === 'min' ? 'mínimo' : 'máximo'} de la columna «${name}» no es un número: ${rule[key]}`);
       }
     }
+    for (const key of ['minLength', 'maxLength']) {
+      if (rule[key] !== undefined && rule[key] !== null && rule[key] !== '' && Number.isNaN(Number(rule[key]))) {
+        errors.push(`La longitud ${key === 'minLength' ? 'mínima' : 'máxima'} de la columna «${name}» no es un número: ${rule[key]}`);
+      }
+    }
     const seen = new Set();
     let count = 0;
     analysis.rows.forEach((row, i) => {
@@ -461,6 +476,9 @@ export function validateSchema(analysis, schema) {
         if (Array.isArray(rule.values) && rule.values.length && !rule.values.includes(value)) bad = true;
         if (rule.min !== undefined && rule.min !== null && rule.min !== '') { const n = parseNumberValue(value); if (n === null || n < Number(rule.min)) bad = true; }
         if (rule.max !== undefined && rule.max !== null && rule.max !== '') { const n = parseNumberValue(value); if (n === null || n > Number(rule.max)) bad = true; }
+        // Longitud del texto (el valor ya viene recortado del análisis).
+        if (rule.minLength !== undefined && rule.minLength !== null && rule.minLength !== '' && value.length < Number(rule.minLength)) bad = true;
+        if (rule.maxLength !== undefined && rule.maxLength !== null && rule.maxLength !== '' && value.length > Number(rule.maxLength)) bad = true;
       }
       if (bad) { count++; rowViolations.add(i); }
     });
@@ -468,6 +486,120 @@ export function validateSchema(analysis, schema) {
     total += count;
   }
   return { total, perColumn, rowViolations, errors };
+}
+
+/** Símbolos legibles para mostrar una regla entre columnas. */
+const REL_OP_LABELS = { '<': '<', '<=': '≤', '>': '>', '>=': '≥', '=': '=', '!=': '≠' };
+const FACTOR_OP_LABELS = { '*': '×', '+': '+', '-': '−' };
+
+/** Resuelve un lado de una regla: número, instante de fecha o texto crudo. */
+function resolveRelationSide(value) {
+  const n = parseNumberValue(value);
+  if (n !== null) return { kind: 'numero', num: n, text: value };
+  const t = dateTimeValue(value);
+  if (t !== null) return { kind: 'fecha', num: t, text: value };
+  return { kind: 'texto', num: null, text: value };
+}
+
+/**
+ * Compara dos lados ya resueltos. Devuelve true si la relación se cumple,
+ * false si se viola y null si la fila no es evaluable (p. ej. ordenar
+ * textos): lo no evaluable nunca cuenta como violación.
+ */
+function compareRelationSides(op, a, b) {
+  const apply = (x, y) => op === '<' ? x < y : op === '<=' ? x <= y : op === '>' ? x > y : op === '>=' ? x >= y : op === '=' ? x === y : x !== y;
+  if (a.kind === 'numero' && b.kind === 'numero') {
+    // Tolerancia uniforme: dos números a 0,01 o menos se tratan como
+    // iguales ANTES de aplicar cualquier operador. Si la tolerancia
+    // fuera solo de la igualdad, «total» ≤ «precio» × «cantidad» con
+    // 30.3 contra 30.29999… (10.1 × 3 en coma flotante) marcaría una
+    // violación fantasma por puro redondeo.
+    const diff = a.num - b.num;
+    return apply(Math.abs(diff) <= 0.01 ? 0 : diff, 0);
+  }
+  if (a.kind === 'fecha' && b.kind === 'fecha') return apply(a.num, b.num);
+  // Tipos mezclados o texto: solo la igualdad tiene sentido, sobre el texto.
+  if (op === '=') return a.text === b.text;
+  if (op === '!=') return a.text !== b.text;
+  return null;
+}
+
+/**
+ * Valida reglas ENTRE columnas del esquema:
+ * `[{ left, op, right, factor, factorOp }]` — p. ej. `«inicio» ≤ «fin»` o
+ * `«total» = «precio» × «cantidad»` (con factor, el lado derecho es
+ * `right factorOp factor` y ambos deben ser numéricos). Las filas con
+ * algún lado vacío o pseudo-vacío se saltan: un dato ausente ya lo
+ * reportan las reglas por columna, no debe duplicarse acá. Devuelve el
+ * total, el detalle por regla (con su etiqueta legible), las filas
+ * afectadas y los errores del propio esquema, sin lanzar excepciones.
+ */
+export function validateRelations(analysis, relations) {
+  const perRelation = [];
+  const rowViolations = new Set();
+  const errors = [];
+  let total = 0;
+  for (const raw of Array.isArray(relations) ? relations : []) {
+    // Una regla malformada en el JSON no debe romper la validación.
+    const rel = raw && typeof raw === 'object' ? raw : {};
+    const { left, op, right, factor, factorOp } = rel;
+    const hasFactor = factor !== undefined && factor !== null && factor !== ''
+      && (factorOp === '*' || factorOp === '+' || factorOp === '-');
+    const label = `«${left}» ${REL_OP_LABELS[op] ?? op} «${right}»${hasFactor ? ` ${FACTOR_OP_LABELS[factorOp]} «${factor}»` : ''}`;
+    if (!Object.hasOwn(REL_OP_LABELS, op)) {
+      errors.push(`La regla entre columnas ${label} tiene un operador no válido: ${op}.`);
+      perRelation.push({ label, count: 0, evaluated: 0 });
+      continue;
+    }
+    // Un factor con una operación desconocida (JSON editado a mano) no se
+    // ignora en silencio: se reporta como las demás reglas malformadas.
+    if (factor !== undefined && factor !== null && factor !== '' && !Object.hasOwn(FACTOR_OP_LABELS, factorOp ?? '')) {
+      errors.push(`La regla entre columnas ${label} tiene una operación de factor no válida: ${factorOp}.`);
+      perRelation.push({ label, count: 0, evaluated: 0 });
+      continue;
+    }
+    // Columna referenciada que no está en este archivo: error (una vez
+    // por regla) y la regla queda en cero, como las columnas ausentes.
+    const referenced = hasFactor ? [left, right, factor] : [left, right];
+    let missingName = null;
+    for (const name of referenced) {
+      if (typeof name !== 'string' || !analysis.headers.includes(name)) { missingName = name; break; }
+    }
+    if (missingName !== null) {
+      errors.push(`La regla entre columnas usa la columna «${missingName}», que no está en este archivo.`);
+      perRelation.push({ label, count: 0, evaluated: 0 });
+      continue;
+    }
+    const li = analysis.headers.indexOf(left);
+    const ri = analysis.headers.indexOf(right);
+    const fi = hasFactor ? analysis.headers.indexOf(factor) : -1;
+    const absent = value => value === '' || PLACEHOLDER_VALUES.has(value.toLowerCase());
+    let count = 0;
+    let evaluated = 0;
+    analysis.rows.forEach((row, i) => {
+      const lv = row.cells[li];
+      const rv = row.cells[ri];
+      const fv = hasFactor ? row.cells[fi] : '';
+      if (absent(lv) || absent(rv) || (hasFactor && absent(fv))) return;
+      let rightSide;
+      if (hasFactor) {
+        const rn = parseNumberValue(rv);
+        const fn = parseNumberValue(fv);
+        if (rn === null || fn === null) return; // el factor solo opera sobre números
+        const combined = factorOp === '*' ? rn * fn : factorOp === '+' ? rn + fn : rn - fn;
+        rightSide = { kind: 'numero', num: combined, text: String(combined) };
+      } else {
+        rightSide = resolveRelationSide(rv);
+      }
+      const verdict = compareRelationSides(op, resolveRelationSide(lv), rightSide);
+      if (verdict === null) return; // fila no evaluable: no cuenta ni viola
+      evaluated++;
+      if (verdict === false) { count++; rowViolations.add(i); }
+    });
+    perRelation.push({ label, count, evaluated });
+    total += count;
+  }
+  return { total, perRelation, rowViolations, errors };
 }
 
 /**
@@ -578,8 +710,81 @@ export function makeReport(analysis, filename) {
     ['General', 'Valores atípicos (fuera del rango intercuartílico)', analysis.outlierCells ?? 0, ''],
     ['General', 'Celdas con posible daño de codificación (mojibake)', analysis.mojibakeCells ?? 0, ''],
     ['General', 'Columnas que parecen clave con valores repetidos', (analysis.keyCollisions ?? []).length, ''],
+    ['General', 'Columnas constantes (todos los valores iguales)', analysis.columns.filter(col => col.constant).length, ''],
     ['General', 'Puntaje de calidad', analysis.qualityScore + ' / 100', ''],
-    ...analysis.columns.map(col => ['Columna', col.name, `${col.typeLabel ?? 'Texto'} · ${col.empty} vacíos · ${col.unique ?? 0} únicos${col.typeMismatches ? ` · ${col.typeMismatches} de otro tipo` : ''}${col.stats && col.type === 'numero' ? ` · media ${num(col.stats.mean)} · mediana ${num(col.stats.median)} · mín ${num(col.stats.min)} · máx ${num(col.stats.max)}` : ''}${col.stats && col.type === 'fecha' ? ` · rango ${col.stats.min} a ${col.stats.max}` : ''}${col.outliers ? ` · ${col.outliers} atípicos` : ''}${col.keyDuplicates ? ` · ${col.keyDuplicates} repetidos en posible clave` : ''}`, col.percentage.toFixed(2) + '% completo'])
+    ...analysis.columns.map(col => ['Columna', col.name, `${col.typeLabel ?? 'Texto'} · ${col.empty} vacíos · ${col.unique ?? 0} únicos${col.typeMismatches ? ` · ${col.typeMismatches} de otro tipo` : ''}${col.stats && col.type === 'numero' ? ` · media ${num(col.stats.mean)} · mediana ${num(col.stats.median)} · mín ${num(col.stats.min)} · máx ${num(col.stats.max)}` : ''}${col.stats && col.type === 'fecha' ? ` · rango ${col.stats.min} a ${col.stats.max}` : ''}${col.outliers ? ` · ${col.outliers} atípicos` : ''}${col.keyDuplicates ? ` · ${col.keyDuplicates} repetidos en posible clave` : ''}${col.constant ? ` · constante («${col.constantValue}»)` : ''}`, col.percentage.toFixed(2) + '% completo'])
   ];
   return '\uFEFF' + records.map(record => record.map(csvCell).join(',')).join('\r\n');
+}
+
+/**
+ * El mismo informe que makeReport pero en JSON, para consumirlo desde
+ * otro sistema o guardarlo como evidencia estructurada. Si se validó un
+ * esquema, `schemaInfo` ({ total, perColumn, relations, errors }) se
+ * incluye como bloque `esquema`. Nota: la cantidad de columnas va en
+ * `columnas` y el detalle por columna en `detalleColumnas` (una clave
+ * JSON no puede repetirse).
+ */
+export function makeJsonReport(analysis, filename, schemaInfo = null) {
+  const round2 = v => Number(v.toFixed(2));
+  const statsFor = col => {
+    if (!col.stats) return null;
+    // Numéricas: media, mediana y desvío redondeados (el resto va crudo).
+    // Fechas: { min, max } son texto y pasan tal cual.
+    if (col.type === 'numero') {
+      const { min, max, mean, median, std, outliers, histogram } = col.stats;
+      return { min, max, mean: round2(mean), median: round2(median), std: round2(std), outliers, histogram };
+    }
+    return col.stats;
+  };
+  const report = {
+    herramienta: 'DataCheck',
+    version: 1,
+    generado: new Date().toISOString(),
+    archivo: filename,
+    delimitador: analysis.delimiter,
+    registros: analysis.rows.length,
+    columnas: analysis.headers.length,
+    puntaje: analysis.qualityScore,
+    resumen: {
+      celdasVacias: analysis.emptyCells,
+      porcentajeVacias: round2(analysis.blankPercent),
+      filasDuplicadas: analysis.duplicateRows,
+      filasIncompletas: analysis.incompleteRows,
+      filasIrregulares: analysis.irregularRows ?? 0,
+      casiDuplicadas: analysis.nearDuplicateRows ?? 0,
+      celdasConEspaciosEnBordes: analysis.paddedCells ?? 0,
+      pseudoVacios: analysis.placeholderCells ?? 0,
+      celdasDeOtroTipo: analysis.typeMismatchCells ?? 0,
+      valoresAtipicos: analysis.outlierCells ?? 0,
+      celdasMojibake: analysis.mojibakeCells ?? 0,
+      columnasConColisionDeClave: (analysis.keyCollisions ?? []).length,
+      columnasConstantes: analysis.columns.filter(col => col.constant).length
+    },
+    detalleColumnas: analysis.columns.map(col => ({
+      nombre: col.name,
+      tipo: col.typeLabel,
+      vacias: col.empty,
+      porcentajeCompleto: round2(col.percentage),
+      unicos: col.unique,
+      constante: !!col.constant,
+      valorConstante: col.constantValue ?? null,
+      deOtroTipo: col.typeMismatches ?? 0,
+      atipicos: col.outliers ?? 0,
+      repetidosEnPosibleClave: col.keyDuplicates ?? 0,
+      estadisticas: statsFor(col),
+      frecuentes: col.topValues ?? []
+    }))
+  };
+  if (schemaInfo) {
+    // Las claves del informe van en español, como el resto del archivo,
+    // aunque la estructura interna de la app las nombre en inglés.
+    report.esquema = {
+      total: schemaInfo.total ?? 0,
+      porColumna: schemaInfo.perColumn ?? [],
+      relaciones: schemaInfo.relations ?? [],
+      errores: schemaInfo.errors ?? []
+    };
+  }
+  return JSON.stringify(report, null, 2);
 }

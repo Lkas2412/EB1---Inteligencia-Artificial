@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell, decodeCsvData, validateSchema, generateSchema, diffAnalyses, makeDiffReport } from '../src/csv.js';
+import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell, decodeCsvData, validateSchema, generateSchema, diffAnalyses, makeDiffReport, validateRelations, makeJsonReport } from '../src/csv.js';
 
 test('Lee CSV con comas entre comillas y comillas escapadas', () => {
   const rows = parseDelimited('nombre,nota\n"Ana, María","Dijo ""hola"""');
@@ -374,4 +374,145 @@ test('Cuenta un encabezado que choca con una etiqueta generada como duplicado', 
 test('Resuelve encabezados repetidos', () => {
   const a = analyzeCsv('id,id,\n1,2,3');
   assert.deepEqual(a.headers, ['id', 'id (2)', 'Columna 3']);
+});
+
+/* ---------- PR #10: constantes, longitudes, relaciones e informe JSON ---------- */
+
+// Fixture estilo «pedidos»: canal siempre «web», un fin anterior al
+// inicio (P-002) y un total que no cierra (P-003: 25 × 4 = 100 ≠ 90).
+const PEDIDOS = [
+  'id,inicio,fin,precio,cantidad,total,codigo,canal',
+  'P-001,2026-01-05,2026-01-20,100,2,200,AB-1234,web',
+  'P-002,2026-02-01,2026-01-15,50,3,150,CD-5678,web',
+  'P-003,2026-03-10,2026-03-12,25,4,90,EF-9012,web',
+  'P-004,2026-04-01,2026-04-02,10,1,10,X,web',
+  'P-005,2026-05-01,2026-05-03,10,1,10,GHIJ-3456,web',
+  'P-006,2026-06-01,2026-06-02,10.1,3,30.3,IJ-7890,web'
+].join('\n');
+
+test('Marca la columna constante y deja las demás sin marcar', () => {
+  const a = analyzeCsv(PEDIDOS);
+  const canal = a.columns.find(c => c.name === 'canal');
+  assert.equal(canal.constant, true);
+  assert.equal(canal.constantValue, 'web');
+  assert.equal(a.columns.find(c => c.name === 'id').constant, false);
+  assert.equal(a.columns.find(c => c.name === 'total').constant, false);
+  // Una columna toda vacía no es constante: no hay ningún valor que se repita.
+  const b = analyzeCsv('a,b\n1,\n2,\n3,');
+  assert.equal(b.columns[1].constant, false);
+  assert.equal(b.columns[1].constantValue, null);
+});
+
+test('El informe CSV cuenta las columnas constantes y las nombra por columna', () => {
+  const report = makeReport(analyzeCsv(PEDIDOS), 'pedidos.csv');
+  assert.match(report, /Columnas constantes \(todos los valores iguales\)/);
+  assert.match(report, /constante \(«web»\)/);
+});
+
+test('El esquema valida la longitud mínima y máxima del texto', () => {
+  const a = analyzeCsv('codigo\nAB-1234\nX\nGHIJ-3456\nN/A');
+  const r = validateSchema(a, { columns: { codigo: { minLength: 4, maxLength: 8 } } });
+  // Largo 7 entra; 1 y 9 violan; «N/A» es pseudo-vacío y no cuenta.
+  assert.equal(r.total, 2);
+  assert.ok(r.rowViolations.has(1) && r.rowViolations.has(2));
+  assert.equal(r.rowViolations.has(3), false);
+  // Una longitud que no es número se reporta como error del esquema.
+  assert.equal(validateSchema(a, { columns: { codigo: { minLength: 'cuatro' } } }).errors.length, 1);
+});
+
+test('Valida una regla de orden entre columnas de fecha', () => {
+  const a = analyzeCsv(PEDIDOS);
+  const r = validateRelations(a, [{ left: 'inicio', op: '<=', right: 'fin' }]);
+  assert.equal(r.total, 1); // solo P-002 termina antes de empezar
+  assert.ok(r.rowViolations.has(1));
+  assert.equal(r.perRelation[0].label, '«inicio» ≤ «fin»');
+  assert.equal(r.perRelation[0].count, 1);
+  assert.equal(r.errors.length, 0);
+});
+
+test('Valida una regla aritmética entre columnas con tolerancia en la igualdad', () => {
+  const a = analyzeCsv(PEDIDOS);
+  const r = validateRelations(a, [{ left: 'total', op: '=', right: 'precio', factor: 'cantidad', factorOp: '*' }]);
+  // Solo P-003 no cierra (90 ≠ 25 × 4); P-006 (10.1 × 3 = 30.29999…)
+  // pasa por la tolerancia de 0,01 en vez de violar por el redondeo.
+  assert.equal(r.total, 1);
+  assert.ok(r.rowViolations.has(2));
+  assert.equal(r.rowViolations.has(5), false);
+  assert.equal(r.perRelation[0].label, '«total» = «precio» × «cantidad»');
+});
+
+test('Las relaciones reportan columnas inexistentes y no evalúan órdenes entre textos', () => {
+  const a = analyzeCsv(PEDIDOS);
+  const r = validateRelations(a, [{ left: 'inicio', op: '<=', right: 'cierre' }]);
+  assert.equal(r.errors.length, 1);
+  assert.match(r.errors[0], /«cierre»/);
+  assert.equal(r.perRelation[0].count, 0);
+  assert.equal(r.total, 0);
+  // Ordenar textos no es evaluable: la fila se salta, nunca es violación.
+  const t = validateRelations(analyzeCsv('x,y\nbbb,aaa\naaa,bbb'), [{ left: 'x', op: '>', right: 'y' }]);
+  assert.equal(t.total, 0);
+  assert.equal(t.rowViolations.size, 0);
+});
+
+test('Genera el informe en JSON con el resumen, las columnas y el bloque de esquema', () => {
+  const a = analyzeCsv(PEDIDOS);
+  const parsed = JSON.parse(makeJsonReport(a, 'pedidos.csv')); // no debe lanzar
+  assert.equal(parsed.herramienta, 'DataCheck');
+  assert.equal(parsed.archivo, 'pedidos.csv');
+  assert.equal(parsed.registros, 6);
+  assert.equal(parsed.columnas, 8);
+  assert.equal(parsed.puntaje, a.qualityScore);
+  assert.equal(parsed.resumen.columnasConstantes, 1);
+  const canal = parsed.detalleColumnas.find(c => c.nombre === 'canal');
+  assert.equal(canal.constante, true);
+  assert.equal(canal.valorConstante, 'web');
+  assert.equal(parsed.esquema, undefined); // sin validación, no hay bloque
+  const conEsquema = JSON.parse(makeJsonReport(a, 'pedidos.csv', {
+    total: 3,
+    perColumn: [{ name: 'codigo', count: 2 }],
+    relations: [{ label: '«inicio» ≤ «fin»', count: 1 }],
+    errors: []
+  }));
+  assert.equal(conEsquema.esquema.total, 3);
+  assert.equal(conEsquema.esquema.porColumna[0].count, 2);
+  assert.equal(conEsquema.esquema.relaciones[0].count, 1);
+  assert.equal(conEsquema.version, 1); // versión del formato del informe
+});
+
+test('Una columna llena de pseudo-vacíos no cuenta como constante', () => {
+  // Corrección de la crítica del PR #10: la columna de «N/A» ya se
+  // reporta como pseudo-vacíos; llamarla además constante duplica el aviso.
+  const a = analyzeCsv('id,nota\n1,N/A\n2,N/A');
+  const nota = a.columns.find(c => c.name === 'nota');
+  assert.equal(nota.constant, false);
+  assert.equal(nota.constantValue, null);
+});
+
+test('La tolerancia de las relaciones también cubre los órdenes (sin violación fantasma)', () => {
+  // Corrección de la crítica del PR #10: con tolerancia solo en la
+  // igualdad, 30.3 ≤ 10.1 × 3 (= 30.29999…) violaría por puro redondeo.
+  const a = analyzeCsv('total,precio,cantidad\n30.3,10.1,3');
+  const r = validateRelations(a, [{ left: 'total', op: '<=', right: 'precio', factor: 'cantidad', factorOp: '*' }]);
+  assert.equal(r.total, 0);
+  // Una diferencia mayor que la tolerancia sí viola el orden.
+  const b = analyzeCsv('a,b\n10.02,10');
+  assert.equal(validateRelations(b, [{ left: 'a', op: '<=', right: 'b' }]).total, 1);
+});
+
+test('Las relaciones cuentan cuántas filas se evaluaron de verdad', () => {
+  // Corrección de la crítica del PR #10: «sin violaciones» debe poder
+  // decir sobre cuántas filas se comprobó (las de lados vacíos se saltan).
+  const a = analyzeCsv('a,b\n1,2\n,5\n3,');
+  const r = validateRelations(a, [{ left: 'a', op: '<=', right: 'b' }]);
+  assert.equal(r.perRelation[0].evaluated, 1);
+  assert.equal(r.perRelation[0].count, 0);
+});
+
+test('Una operación de factor no válida se reporta como error, no se ignora', () => {
+  // Corrección de la auditoría del PR #10: un factorOp corrupto en el
+  // JSON degradaba la regla a comparación simple en silencio.
+  const a = analyzeCsv(PEDIDOS);
+  const r = validateRelations(a, [{ left: 'total', op: '=', right: 'precio', factor: 'cantidad', factorOp: '%' }]);
+  assert.equal(r.total, 0);
+  assert.equal(r.errors.length, 1);
 });
