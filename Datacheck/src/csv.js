@@ -44,6 +44,40 @@ const PLACEHOLDER_VALUES = new Set([
   'sin datos', 's/d', 'no aplica', 'no disponible', 'ninguno', '-', '--', '.'
 ]);
 
+const TYPE_LABELS = {
+  numero: 'Número', fecha: 'Fecha', correo: 'Correo', booleano: 'Booleano',
+  texto: 'Texto', mixto: 'Mixto', vacio: 'Sin datos'
+};
+
+function isNumberValue(value) {
+  return /^[+-]?\d+$/.test(value)                       // entero
+    || /^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$/.test(value)    // 1.234 / 1.234,56
+    || /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/.test(value)    // 1,234 / 1,234.56
+    || /^[+-]?\d+[.,]\d+$/.test(value);                 // 1234,56 / 1234.56
+}
+
+function isDateValue(value) {
+  const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(value)
+    || /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(value);
+  if (!match) return false;
+  let year, month, day;
+  if (match[1].length === 4) { year = +match[1]; month = +match[2]; day = +match[3]; }
+  else { day = +match[1]; month = +match[2]; year = +match[3]; }
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  // Verificación real: 31/02 se convierte en 3/03 y no coincide → no es fecha.
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+/** Clasifica una celda no vacía en un tipo simple. Heurística barata y sin librerías. */
+export function classifyCell(value) {
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return 'correo';
+  if (isDateValue(value)) return 'fecha';
+  if (isNumberValue(value)) return 'numero';
+  if (/^(true|false|verdadero|falso|sí|si|no|yes)$/i.test(value)) return 'booleano';
+  return 'texto';
+}
+
 /** Elige el separador con más columnas y filas uniformes. */
 export function detectDelimiter(source) {
   const candidates = [',', ';', '\t'];
@@ -108,18 +142,28 @@ export function analyzeCsv(source) {
   const colPadded = new Array(count).fill(0);
   const colPlaceholder = new Array(count).fill(0);
   const colUnique = Array.from({ length: count }, () => new Set());
+  const colTypeCounts = Array.from({ length: count }, () => ({}));
+  const typesByRow = [];
   const rows = parsed.slice(1).map((values, index) => {
     const raw = headers.map((_, j) => values[j] ?? '');
     const cells = raw.map(value => value.trim());
     let blanks = 0;
+    const rowTypes = new Array(count).fill(null);
     cells.forEach((value, j) => {
       if (value === '') { blanks++; colEmpty[j]++; }
       else {
         colUnique[j].add(value);
         if (raw[j] !== value) { colPadded[j]++; paddedCells++; }
         if (PLACEHOLDER_VALUES.has(value.toLowerCase())) { colPlaceholder[j]++; placeholderCells++; }
+        else {
+          // Los pseudo-vacíos no participan del tipo: ya se reportan aparte.
+          const type = classifyCell(value);
+          rowTypes[j] = type;
+          colTypeCounts[j][type] = (colTypeCounts[j][type] || 0) + 1;
+        }
       }
     });
+    typesByRow.push(rowTypes);
     emptyCells += blanks;
     // Fila irregular: su cantidad de celdas difiere de la del encabezado
     // (antes se rellenaba/recortaba en silencio y el problema quedaba oculto).
@@ -138,6 +182,24 @@ export function analyzeCsv(source) {
     return { number: index + 1, cells, incomplete: blanks > 0, duplicate: isDuplicate, irregular, nearDuplicate: isNearDuplicate };
   });
   if (rows.length > 20000) throw new Error('Se admiten hasta 20 000 registros por archivo.');
+  // Tipo de columna: el dominante si cubre al menos el 80 % de las celdas
+  // clasificadas. En columnas de texto o mixtas no se marcan diferencias.
+  let typeMismatchCells = 0;
+  const colTypes = colTypeCounts.map(counts => {
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((n, [, c]) => n + c, 0);
+    if (!total) return { type: 'vacio', mismatches: 0 };
+    const [topType, topCount] = entries[0];
+    if (topCount / total < 0.8) return { type: 'mixto', mismatches: 0 };
+    if (topType === 'texto') return { type: 'texto', mismatches: 0 };
+    const mismatches = total - topCount;
+    typeMismatchCells += mismatches;
+    return { type: topType, mismatches };
+  });
+  rows.forEach((row, i) => {
+    row.typeMismatch = typesByRow[i].some((type, j) => type !== null
+      && colTypes[j].mismatches > 0 && type !== colTypes[j].type);
+  });
   const columns = headers.map((name, colIndex) => {
     const empty = colEmpty[colIndex];
     return {
@@ -145,7 +207,10 @@ export function analyzeCsv(source) {
       percentage: rows.length ? (rows.length - empty) / rows.length * 100 : 0,
       unique: colUnique[colIndex].size,
       padded: colPadded[colIndex],
-      placeholder: colPlaceholder[colIndex]
+      placeholder: colPlaceholder[colIndex],
+      type: colTypes[colIndex].type,
+      typeLabel: TYPE_LABELS[colTypes[colIndex].type],
+      typeMismatches: colTypes[colIndex].mismatches
     };
   });
   const blankPercent = rows.length ? emptyCells / (rows.length * headers.length) * 100 : 0;
@@ -153,7 +218,7 @@ export function analyzeCsv(source) {
   return {
     delimiter, headers, rows, columns, emptyCells, duplicateRows,
     irregularRows, paddedCells, placeholderCells, nearDuplicateRows,
-    duplicateHeaders, emptyHeaders,
+    duplicateHeaders, emptyHeaders, typeMismatchCells,
     incompleteRows: rows.filter(row => row.incomplete).length,
     blankPercent,
     duplicatePercent,
@@ -197,8 +262,9 @@ export function makeReport(analysis, filename) {
     ['General', 'Filas casi duplicadas (difieren en mayúsculas/espacios)', analysis.nearDuplicateRows ?? 0, ''],
     ['General', 'Encabezados duplicados (renombrados)', analysis.duplicateHeaders ?? 0, ''],
     ['General', 'Encabezados vacíos (renombrados)', analysis.emptyHeaders ?? 0, ''],
+    ['General', 'Celdas que no coinciden con el tipo de su columna', analysis.typeMismatchCells ?? 0, ''],
     ['General', 'Puntaje de calidad', analysis.qualityScore + ' / 100', ''],
-    ...analysis.columns.map(col => ['Columna', col.name, `${col.empty} vacíos · ${col.unique ?? 0} únicos`, col.percentage.toFixed(2) + '% completo'])
+    ...analysis.columns.map(col => ['Columna', col.name, `${col.typeLabel ?? 'Texto'} · ${col.empty} vacíos · ${col.unique ?? 0} únicos${col.typeMismatches ? ` · ${col.typeMismatches} de otro tipo` : ''}`, col.percentage.toFixed(2) + '% completo'])
   ];
   return '\uFEFF' + records.map(record => record.map(csvCell).join(',')).join('\r\n');
 }

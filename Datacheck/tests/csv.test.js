@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv } from '../src/csv.js';
+import { analyzeCsv, parseDelimited, detectDelimiter, csvCell, makeReport, makeCleanCsv, classifyCell } from '../src/csv.js';
 
 test('Lee CSV con comas entre comillas y comillas escapadas', () => {
   const rows = parseDelimited('nombre,nota\n"Ana, María","Dijo ""hola"""');
@@ -96,6 +96,52 @@ test('Reporta encabezados duplicados (también por mayúsculas) y vacíos', () =
   const a = analyzeCsv('id,ID,,nombre, id \n1,2,3,4,5');
   assert.equal(a.duplicateHeaders, 2);
   assert.equal(a.emptyHeaders, 1);
+});
+
+test('Infiere el tipo de cada columna y marca las celdas que no coinciden', () => {
+  const a = analyzeCsv([
+    'monto,fecha,correo',
+    '100,2026-01-05,ana@example.com',
+    '250,2026-01-06,luis@example.com',
+    'ERROR,2026-01-07,pedro@example.com',
+    '300,31/02/2026,no-es-correo',
+    '400,2026-01-08,eva@example.com'
+  ].join('\n'));
+  assert.equal(a.columns[0].type, 'numero');
+  assert.equal(a.columns[0].typeMismatches, 1); // ERROR
+  assert.equal(a.columns[1].type, 'fecha');
+  assert.equal(a.columns[1].typeMismatches, 1); // 31/02/2026 no existe
+  assert.equal(a.columns[2].type, 'correo');
+  assert.equal(a.columns[2].typeMismatches, 1); // no-es-correo
+  assert.equal(a.typeMismatchCells, 3);
+  assert.equal(a.rows[2].typeMismatch, true);
+  assert.equal(a.rows[3].typeMismatch, true);
+  assert.equal(a.rows[0].typeMismatch, false);
+  assert.equal(a.rows[4].typeMismatch, false);
+});
+
+test('El tipo ignora pseudo-vacíos y no marca columnas de texto ni mixtas', () => {
+  const a = analyzeCsv('monto\n100\n200\nN/A\n300\n400');
+  assert.equal(a.columns[0].type, 'numero');
+  assert.equal(a.columns[0].typeMismatches, 0); // N/A es pseudo-vacío, no error de tipo
+  assert.equal(a.placeholderCells, 1);
+  const b = analyzeCsv('activo\ntrue\nfalse\ntrue\nsí\nfalse');
+  assert.equal(b.columns[0].type, 'booleano');
+  const c = analyzeCsv('dato\n123\nabc\n456\ndef');
+  assert.equal(c.columns[0].type, 'mixto');
+  assert.equal(c.columns[0].typeMismatches, 0);
+  const d = analyzeCsv('ciudad\nLima\nCusco\nPiura');
+  assert.equal(d.columns[0].type, 'texto');
+  assert.equal(d.typeMismatchCells, 0);
+});
+
+test('Clasifica formatos numéricos y de fecha habituales', () => {
+  assert.equal(classifyCell('1.234,56'), 'numero');
+  assert.equal(classifyCell('1,234.56'), 'numero');
+  assert.equal(classifyCell('-42'), 'numero');
+  assert.equal(classifyCell('05/01/2026'), 'fecha');
+  assert.equal(classifyCell('2026-13-01'), 'texto'); // mes imposible
+  assert.equal(classifyCell('hola'), 'texto');
 });
 
 test('Resuelve encabezados repetidos', () => {

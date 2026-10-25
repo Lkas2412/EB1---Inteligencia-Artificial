@@ -156,8 +156,9 @@ function renderSummary() {
   const placeholderCells = result.placeholderCells ?? 0;
   const nearDuplicateRows = result.nearDuplicateRows ?? 0;
   const headerIssues = (result.duplicateHeaders ?? 0) + (result.emptyHeaders ?? 0);
+  const typeMismatchCells = result.typeMismatchCells ?? 0;
   const hasProblems = result.emptyCells > 0 || result.duplicateRows > 0 || irregularRows > 0
-    || placeholderCells > 0 || nearDuplicateRows > 0 || headerIssues > 0;
+    || placeholderCells > 0 || nearDuplicateRows > 0 || headerIssues > 0 || typeMismatchCells > 0;
   const insight = $('#insight');
   insight.hidden = false;
   insight.classList.toggle('good', !hasProblems);
@@ -176,6 +177,7 @@ function renderSummary() {
   if (paddedCells > 0) extras.push(`${fmt(paddedCells)} celdas con espacios al inicio o al final`);
   if (result.duplicateHeaders > 0) extras.push(`${fmt(result.duplicateHeaders)} encabezados duplicados (renombrados automáticamente)`);
   if (result.emptyHeaders > 0) extras.push(`${fmt(result.emptyHeaders)} encabezados vacíos (renombrados automáticamente)`);
+  if (typeMismatchCells > 0) extras.push(`${fmt(typeMismatchCells)} celdas que no coinciden con el tipo de su columna`);
   const mainText = main.length ? ` Se detectaron ${main.join(' y ')}.` : '';
   const extraText = extras.length ? ` Además: ${extras.join('; ')}.` : '';
   $('#insightText').textContent = hasProblems
@@ -214,7 +216,8 @@ function renderColumns() {
     nextFrame(() => { fill.style.width = `${col.percentage}%`; });
     track.append(fill);
     const note = document.createElement('small');
-    const details = [`${fmt(col.complete)} completos`, `${fmt(col.empty)} vacíos`, `${fmt(col.unique ?? 0)} únicos`];
+    const details = [col.typeLabel ?? 'Texto', `${fmt(col.complete)} completos`, `${fmt(col.empty)} vacíos`, `${fmt(col.unique ?? 0)} únicos`];
+    if (col.typeMismatches) details.push(`${fmt(col.typeMismatches)} de otro tipo`);
     if (col.padded) details.push(`${fmt(col.padded)} con espacios en los bordes`);
     if (col.placeholder) details.push(`${fmt(col.placeholder)} pseudo-vacíos`);
     note.textContent = details.join(' · ');
@@ -272,8 +275,8 @@ function renderPreview() {
     }
     const status = document.createElement('td');
     const tag = document.createElement('span');
-    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.nearDuplicate ? 'near' : row.incomplete ? 'incomplete' : 'ok'}`;
-    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.nearDuplicate ? 'Casi duplicada' : row.incomplete ? 'Incompleta' : 'Correcta';
+    tag.className = `row-tag ${row.duplicate ? 'duplicate' : row.irregular ? 'irregular' : row.nearDuplicate ? 'near' : row.typeMismatch ? 'type' : row.incomplete ? 'incomplete' : 'ok'}`;
+    tag.textContent = row.duplicate ? 'Duplicada' : row.irregular ? 'Irregular' : row.nearDuplicate ? 'Casi duplicada' : row.typeMismatch ? 'Tipo distinto' : row.incomplete ? 'Incompleta' : 'Correcta';
     status.append(tag);
     tr.append(status);
     tbody.append(tr);
