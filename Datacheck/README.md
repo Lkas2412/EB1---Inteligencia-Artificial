@@ -26,6 +26,7 @@ Importa un archivo CSV y detecta en segundos celdas vacías, filas duplicadas, t
 
 - [¿Qué es DataCheck?](#qué-es-datacheck)
 - [Características](#características)
+- [Comparación con otras herramientas](#comparación-con-otras-herramientas)
 - [Capturas](#capturas)
 - [Cómo ejecutarla](#cómo-ejecutarla)
 - [Cómo usarla](#cómo-usarla)
@@ -105,6 +106,23 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 - Animaciones sobrias (conteo de métricas y barras) que se desactivan si tu sistema pide *reducir movimiento*.
 - Accesibilidad cuidada: foco de teclado siempre visible, contraste AA en ambos temas, estados anunciados para lectores de pantalla.
 - Si una carga no es válida, verás un **error claro en español** y los resultados anteriores se limpian: nunca quedan mezclados datos de dos archivos.
+
+## Comparación con otras herramientas
+
+DataCheck no pretende reemplazar a las herramientas profesionales: ocupa el hueco de **validar un CSV en segundos, sin instalar nada, sin programar y sin que el archivo salga de tu equipo**. Así se ubica frente a las referencias del rubro (investigación de octubre de 2026; las herramientas web se verificaron en vivo):
+
+| Herramienta | Dónde corre | Instalación | Tu archivo… | Su fuerte frente a DataCheck |
+|---|---|---|---|---|
+| **DataCheck** | Navegador, 100 % local | Ninguna | **Nunca sale de tu equipo** | — |
+| **GoValidate.ai** | Navegador, 100 % local | Ninguna (comercial) | No sale del equipo | Diff con tolerancias y recibo auditable; editor de transformaciones con pasos registrados. Es de pago y de código cerrado. |
+| **Arotip** | Navegador, 100 % local | Ninguna (gratis con límites) | No sale del equipo | Ahí nació la idea de las «ID collisions». Sin esquema de usuario ni estadísticas por columna (solo mín/máx/media); también cerrado. |
+| **CSVLint** | Servicio web + CLI | Ninguna en la web | **Se sube a su servidor** | Esquemas Table Schema completos (el estándar Frictionless) y distintivo de validación incrustable. |
+| **OpenRefine** | Escritorio (Java) | Sí | No sale del equipo | Limpieza profunda: *clustering* para unificar variantes («Lake Shasta» / «Shasta Lake»), transformaciones con expresiones e historial reutilizable. |
+| **csvkit · qsv** | Terminal | Sí | No sale del equipo | Potencia y escala: SQL sobre el CSV, estadísticas avanzadas y archivos de gigabytes por *streaming*. Sin interfaz visual. |
+| **ydata-profiling** | Librería Python | Sí (`pip`) | No sale del equipo | Informe exploratorio completo: correlaciones, alertas automáticas y comparación de datasets. Hay que programar. |
+| **Great Expectations** | Librería Python | Sí (`pip`) | No sale del equipo | Validación profesional para pipelines: cientos de reglas declarativas versionables y documentación automática. Pesado para un chequeo simple. |
+
+¿Y qué toma DataCheck de cada una? Las **estadísticas por columna** y el **esquema de usuario** vienen de CSVLint y csvkit; los **atípicos por IQR**, de qsv e ydata-profiling; las **colisiones de clave**, de Arotip; el **diff por clave**, de csv-diff y del Reconcile de GoValidate; y la **corrección solo con opciones marcadas**, de OpenRefine. La combinación que no ofrece ninguna otra de las verificadas en vivo: procesamiento local, código abierto, interfaz en español, puntaje explicado y esquema reutilizable entre cargas.
 
 ## Capturas
 
