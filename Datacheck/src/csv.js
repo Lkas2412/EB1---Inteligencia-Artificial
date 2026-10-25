@@ -253,16 +253,20 @@ export function analyzeCsv(source) {
       const sorted = colNums[j].map(e => e.v).sort((a, b) => a - b);
       const n = sorted.length;
       const mean = sorted.reduce((a, b) => a + b, 0) / n;
-      const std = Math.sqrt(sorted.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+      // Desvío muestral (n−1), como csvstat y Excel (STDEV.S), que es el
+      // que el usuario puede contrastar; con n=1 no hay dispersión.
+      const std = n > 1 ? Math.sqrt(sorted.reduce((a, v) => a + (v - mean) ** 2, 0) / (n - 1)) : 0;
       const q1 = quantile(sorted, 0.25);
       const q3 = quantile(sorted, 0.75);
       const iqr = q3 - q1;
+      // Cercas de Tukey estrictas: si IQR = 0 (la mitad central de los
+      // datos es un único valor), la cerca es ese punto y cualquier otro
+      // valor es atípico — justo el caso «columna constante con un
+      // importe mal cargado» que más vale avisar.
+      const low = q1 - 1.5 * iqr;
+      const high = q3 + 1.5 * iqr;
       let outliers = 0;
-      if (iqr > 0) {
-        const low = q1 - 1.5 * iqr;
-        const high = q3 + 1.5 * iqr;
-        for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
-      }
+      for (const e of colNums[j]) if (e.v < low || e.v > high) { outliers++; outlierRows.add(e.row); }
       outlierCells += outliers;
       stats = { min: sorted[0], max: sorted[n - 1], mean, median: quantile(sorted, 0.5), std, outliers };
     } else if (colTypes[j].type === 'fecha' && colDates[j].length) {
