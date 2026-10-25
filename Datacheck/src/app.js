@@ -7,6 +7,7 @@ let result = null;
 let currentFilename = '';
 let currentEncoding = 'utf-8';
 let schema = null;
+let schemaNotice = '';
 let schemaRowRefs = [];
 let activeFilter = 'all';
 // Token de generación: cada carga o limpieza lo incrementa y las
