@@ -390,25 +390,39 @@ export function validateSchema(analysis, schema) {
   const rowViolations = new Set();
   const errors = [];
   let total = 0;
-  for (const [name, rule] of Object.entries(rules)) {
+  for (const [name, rawRule] of Object.entries(rules)) {
+    // Un JSON de esquema malformado no debe romper la validación.
+    const rule = rawRule && typeof rawRule === 'object' ? rawRule : {};
     const j = analysis.headers.indexOf(name);
     if (j === -1) { perColumn.push({ name, count: 1, missing: true }); total += 1; continue; }
     let regex = null;
     if (rule.pattern) {
-      try { regex = new RegExp(rule.pattern); }
+      // El patrón debe coincidir con el valor COMPLETO, como en
+      // Frictionless/CSVLint, no con un fragmento cualquiera.
+      try { regex = new RegExp(`^(?:${rule.pattern})$`); }
       catch { errors.push(`Patrón inválido en la columna «${name}»: ${rule.pattern}`); }
+    }
+    if (rule.values !== undefined && !Array.isArray(rule.values)) errors.push(`Valores permitidos inválidos en la columna «${name}»: debe ser una lista.`);
+    for (const key of ['min', 'max']) {
+      if (rule[key] !== undefined && rule[key] !== null && rule[key] !== '' && Number.isNaN(Number(rule[key]))) {
+        errors.push(`El ${key === 'min' ? 'mínimo' : 'máximo'} de la columna «${name}» no es un número: ${rule[key]}`);
+      }
     }
     const seen = new Set();
     let count = 0;
     analysis.rows.forEach((row, i) => {
       const value = row.cells[j];
       let bad = false;
-      if (value === '') { if (rule.required) bad = true; }
+      // Los pseudo-vacíos («N/A», «sin dato»…) cuentan como dato ausente,
+      // igual que en el resto del análisis: solo los alcanza «Requerida»
+      // y no participan de tipo, unicidad, patrón, lista ni rango.
+      const missing = value === '' || PLACEHOLDER_VALUES.has(value.toLowerCase());
+      if (missing) { if (rule.required) bad = true; }
       else {
         if (rule.type && rule.type !== 'cualquiera' && classifyCell(value) !== rule.type) bad = true;
         if (rule.unique) { if (seen.has(value)) bad = true; seen.add(value); }
         if (regex && !regex.test(value)) bad = true;
-        if (rule.values?.length && !rule.values.includes(value)) bad = true;
+        if (Array.isArray(rule.values) && rule.values.length && !rule.values.includes(value)) bad = true;
         if (rule.min !== undefined && rule.min !== null && rule.min !== '') { const n = parseNumberValue(value); if (n === null || n < Number(rule.min)) bad = true; }
         if (rule.max !== undefined && rule.max !== null && rule.max !== '') { const n = parseNumberValue(value); if (n === null || n > Number(rule.max)) bad = true; }
       }
@@ -427,14 +441,21 @@ export function validateSchema(analysis, schema) {
  */
 export function generateSchema(analysis) {
   const columns = {};
-  for (const col of analysis.columns) {
+  analysis.columns.forEach((col, j) => {
     const rule = {};
-    if (col.type && !['texto', 'vacio', 'mixto'].includes(col.type)) rule.type = col.type;
-    if (col.empty === 0 && analysis.rows.length) rule.required = true;
-    const classified = analysis.rows.length - col.empty - (col.placeholder ?? 0);
-    if (classified > 0 && col.unique === classified) rule.unique = true;
+    // Tipo solo si TODAS las celdas clasificadas coinciden: si el propio
+    // análisis ya cuenta disidentes (umbral 80 %), fijar el tipo haría
+    // que el esquema generado no lo cumpliera ni el archivo original.
+    if (col.type && !['texto', 'vacio', 'mixto'].includes(col.type) && !(col.typeMismatches > 0)) rule.type = col.type;
+    // Requerida solo sin vacíos ni pseudo-vacíos (ambos son «ausente»).
+    if (col.empty === 0 && (col.placeholder ?? 0) === 0 && analysis.rows.length) rule.required = true;
+    // Unicidad medida solo sobre valores clasificados (sin vacíos ni
+    // pseudo-vacíos): col.unique los cuenta como valores y falseaba la
+    // igualdad — el esquema salía con unique:true sobre datos repetidos.
+    const classifiedValues = analysis.rows.map(r => r.cells[j]).filter(v => v !== '' && !PLACEHOLDER_VALUES.has(v.toLowerCase()));
+    if (classifiedValues.length > 0 && new Set(classifiedValues).size === classifiedValues.length) rule.unique = true;
     if (Object.keys(rule).length) columns[col.name] = rule;
-  }
+  });
   return { version: 1, columns };
 }
 

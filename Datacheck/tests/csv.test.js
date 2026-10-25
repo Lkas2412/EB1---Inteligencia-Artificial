@@ -255,6 +255,37 @@ test('Decodifica UTF-16 con BOM en vez de mostrar basura', () => {
   assert.equal(decoded.text, text);
 });
 
+test('El esquema generado cumple su propio invariante (regresión de auditoría)', () => {
+  // 90 % numérica con un disidente: no debe fijar type:'numero'.
+  const conDisidente = analyzeCsv('m\n1\n2\n3\n4\n5\n6\n7\n8\n9\nabc');
+  assert.equal(validateSchema(conDisidente, generateSchema(conDisidente)).total, 0);
+  // 'a','a','N/A': no debe salir unique:true por coincidencia aritmética.
+  const conPseudo = analyzeCsv('x\na\na\nN/A');
+  assert.equal(generateSchema(conPseudo).columns.x?.unique, undefined);
+  assert.equal(validateSchema(conPseudo, generateSchema(conPseudo)).total, 0);
+});
+
+test('El patrón del esquema debe coincidir con el valor completo', () => {
+  const a = analyzeCsv('codigo\n123\nabc123');
+  const r = validateSchema(a, { columns: { codigo: { pattern: '\\d+' } } });
+  assert.equal(r.total, 1);
+  assert.ok(r.rowViolations.has(1));
+});
+
+test('Un esquema malformado se reporta sin lanzar excepciones', () => {
+  const a = analyzeCsv('n\n5');
+  assert.equal(validateSchema(a, { columns: { n: null } }).total, 0);
+  const r = validateSchema(a, { columns: { n: { min: 'abc', values: 'cinco' } } });
+  assert.equal(r.errors.length, 2);
+});
+
+test('Los pseudo-vacíos cuentan como dato ausente en el esquema', () => {
+  const a = analyzeCsv('monto\n100\nN/A');
+  // «N/A» no es "otro tipo": es ausencia; sin Requerida no hay violación.
+  assert.equal(validateSchema(a, { columns: { monto: { type: 'numero' } } }).total, 0);
+  assert.equal(validateSchema(a, { columns: { monto: { required: true } } }).total, 1);
+});
+
 test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {
   const a = analyzeCsv('a,b,c\n,,\n1,2,3');
   assert.equal(a.rows.length, 2);
