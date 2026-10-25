@@ -109,20 +109,41 @@ En áreas administrativas y de análisis es habitual recibir reportes CSV para c
 
 ## Comparación con otras herramientas
 
-DataCheck no pretende reemplazar a las herramientas profesionales: ocupa el hueco de **validar un CSV en segundos, sin instalar nada, sin programar y sin que el archivo salga de tu equipo**. Así se ubica frente a las referencias del rubro (investigación de octubre de 2026; las herramientas web se verificaron en vivo):
+Matriz de capacidades contra las referencias del rubro (investigación de octubre de 2026; las herramientas web se verificaron en vivo). **✓** = lo tiene · **Parcial** = lo ofrece parcialmente, con más pasos, con instalación o en versión de pago · **—** = no lo tiene o no consta.
 
-| Herramienta | Dónde corre | Instalación | Tu archivo… | Su fuerte frente a DataCheck |
-|---|---|---|---|---|
-| **DataCheck** | Navegador, 100 % local | Ninguna | **Nunca sale de tu equipo** | — |
-| **GoValidate.ai** | Navegador, 100 % local | Ninguna (comercial) | No sale del equipo | Diff con tolerancias y recibo auditable; editor de transformaciones con pasos registrados. Es de pago y de código cerrado. |
-| **Arotip** | Navegador, 100 % local | Ninguna (gratis con límites) | No sale del equipo | Ahí nació la idea de las «ID collisions». Sin esquema de usuario ni estadísticas por columna (solo mín/máx/media); también cerrado. |
-| **CSVLint** | Servicio web + CLI | Ninguna en la web | **Se sube a su servidor** | Esquemas Table Schema completos (el estándar Frictionless) y distintivo de validación incrustable. |
-| **OpenRefine** | Escritorio (Java) | Sí | No sale del equipo | Limpieza profunda: *clustering* para unificar variantes («Lake Shasta» / «Shasta Lake»), transformaciones con expresiones e historial reutilizable. |
-| **csvkit · qsv** | Terminal | Sí | No sale del equipo | Potencia y escala: SQL sobre el CSV, estadísticas avanzadas y archivos de gigabytes por *streaming*. Sin interfaz visual. |
-| **ydata-profiling** | Librería Python | Sí (`pip`) | No sale del equipo | Informe exploratorio completo: correlaciones, alertas automáticas y comparación de datasets. Hay que programar. |
-| **Great Expectations** | Librería Python | Sí (`pip`) | No sale del equipo | Validación profesional para pipelines: cientos de reglas declarativas versionables y documentación automática. Pesado para un chequeo simple. |
+| Capacidad | **DataCheck** | GoValidate.ai | Arotip | CSVLint | OpenRefine | csvkit · qsv | ydata-profiling | Great Expectations |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Sin instalar nada, directo en el navegador | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| El archivo nunca sale de tu equipo | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ | ✓ |
+| Código abierto | ✓ | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Pensada para no técnicos (sin terminal ni código) | ✓ | ✓ | ✓ | ✓ | Parcial | — | — | — |
+| Puntaje de calidad 0–100 con la fórmula explicada | ✓ | — | ✓ | — | — | — | — | — |
+| Estadísticas por columna (media, mediana, desvío, rango) | ✓ | Parcial | Parcial | — | — | ✓ | ✓ | Parcial |
+| Atípicos con método robusto (IQR) | ✓ | Parcial | Parcial | — | — | ✓ | ✓ | — |
+| Histograma por columna | ✓ | — | — | — | Parcial | Parcial | ✓ | — |
+| Colisiones de clave (IDs repetidos con datos distintos) | ✓ | — | ✓ | Parcial | — | Parcial | — | Parcial |
+| Codificación: rescata Windows-1252 y detecta mojibake | ✓ | — | — | Parcial | Parcial | Parcial | — | — |
+| Esquema definido por el usuario | ✓ | — | — | ✓ | — | ✓ | — | ✓ |
+| Esquema generado desde el propio archivo | ✓ | — | — | — | — | ✓ | — | Parcial |
+| Diff entre dos archivos por columna clave | ✓ | ✓ | — | — | — | ✓ | ✓ | — |
+| Corrección guiada (descarga limpia con opciones) | ✓ | ✓ | — | — | ✓ | ✓ | — | — |
+| Casi duplicadas por normalización (mayúsculas/espacios) | ✓ | — | — | — | Parcial | — | Parcial | — |
+| Pseudo-vacíos («N/A», «sin dato») como hallazgo propio | ✓ | — | — | — | — | ✓ | — | — |
+| Archivos gigantes por *streaming* (gigabytes) | — | — | — | — | — | ✓ | — | — |
+| Correlaciones entre columnas | — | — | — | — | — | — | ✓ | — |
+| SQL sobre el CSV | — | — | — | — | — | ✓ | — | — |
+| *Clustering* para unificar variantes de un mismo dato | — | — | — | — | ✓ | — | — | — |
 
-¿Y qué toma DataCheck de cada una? Las **estadísticas por columna** y el **esquema de usuario** vienen de CSVLint y csvkit; los **atípicos por IQR**, de qsv e ydata-profiling; las **colisiones de clave**, de Arotip; el **diff por clave**, de csv-diff y del Reconcile de GoValidate; y la **corrección solo con opciones marcadas**, de OpenRefine. La combinación que no ofrece ninguna otra de las verificadas en vivo: procesamiento local, código abierto, interfaz en español, puntaje explicado y esquema reutilizable entre cargas.
+### Dónde gana DataCheck
+
+- **Es la única de navegador con el paquete completo a la vez**: estadísticas con mediana y desvío (las demás de navegador solo dan mín/máx/media), atípicos por IQR, histograma, colisiones de clave, esquema, diff y corrección guiada — abierta, gratuita y en español.
+- **La codificación**: es la única que *rescata* el archivo en Windows-1252 de Excel y le pone nombre al mojibake; CSVLint lo marca como error, pero el archivo se sube a su servidor y no hay rescate.
+- **El esquema pensado para el uso mensual**: se genera desde el archivo que está bien, **se conserva entre cargas** y viaja en un JSON; entre las de navegador verificadas, nadie más lo hace.
+- **Hallazgos sin configurar nada**: casi duplicadas por normalización y pseudo-vacíos detectados de fábrica, sin escribir una regla.
+
+### Dónde ganan las profesionales (y DataCheck no compite)
+
+Escala de gigabytes por *streaming* y SQL (qsv/csvkit), correlaciones y alertas exploratorias (ydata-profiling), *clustering* y transformaciones con expresiones (OpenRefine), esquemas Frictionless completos y validación en pipelines (CSVLint, Great Expectations) y el editor de transformaciones con pasos registrados de GoValidate. DataCheck toma de cada una lo que cabe en su nicho —validar en segundos, en el navegador y en español—: las estadísticas y el esquema, de CSVLint/csvkit; los atípicos IQR, de qsv/ydata; las colisiones, de Arotip; el diff, de csv-diff/GoValidate; la corrección solo con opciones marcadas, de OpenRefine.
 
 ## Capturas
 
