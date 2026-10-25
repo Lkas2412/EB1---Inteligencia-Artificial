@@ -9,7 +9,11 @@ export function parseDelimited(source, delimiter = ',') {
 
   const appendRow = () => {
     row.push(cell);
-    if (row.some(value => value.trim() !== '')) rows.push(row);
+    // Se omiten solo las líneas físicamente en blanco (una única celda
+    // vacía). Una fila con delimitadores y todas las celdas vacías (`,,`)
+    // es un registro con campos vacíos: se conserva, para que el análisis
+    // lo cuente como incompleto en vez de hacerlo desaparecer.
+    if (row.length > 1 || row.some(value => value.trim() !== '')) rows.push(row);
     row = [];
     cell = '';
   };

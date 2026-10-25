@@ -144,6 +144,20 @@ test('Clasifica formatos numéricos y de fecha habituales', () => {
   assert.equal(classifyCell('hola'), 'texto');
 });
 
+test('Una fila con delimitadores y celdas vacías cuenta como registro incompleto', () => {
+  const a = analyzeCsv('a,b,c\n,,\n1,2,3');
+  assert.equal(a.rows.length, 2);
+  assert.equal(a.rows[0].incomplete, true);
+  assert.equal(a.emptyCells, 3);
+  // Dos registros vacíos son duplicados entre sí.
+  assert.equal(analyzeCsv('a,b\n,\n,').duplicateRows, 1);
+});
+
+test('Las líneas físicamente en blanco se siguen omitiendo', () => {
+  const a = analyzeCsv('a,b\n\n1,2\n   \n3,4\n');
+  assert.equal(a.rows.length, 2);
+});
+
 test('Más de 20 000 filas da el error amable, no un RangeError', () => {
   // Regresión: el ancho se calculaba con Math.max(...filas) y un archivo
   // de ~600 KB con filas cortas reventaba la pila antes del chequeo.

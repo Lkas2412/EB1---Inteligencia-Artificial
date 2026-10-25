@@ -34,7 +34,7 @@ Analistas de datos, estudiantes y personal administrativo que necesita revisar a
 15. Detectar **vacíos encubiertos** (valores como `N/A`, `null` o `sin dato` que fingen ser datos), **filas casi duplicadas** (iguales salvo mayúsculas o espacios internos) y **avisos de encabezado** (duplicados —también si solo difieren en mayúsculas— o vacíos que fueron renombrados).
 16. **Inferir el tipo de cada columna** (número, fecha, correo, booleano o texto) y avisar las celdas que no coinciden con el tipo dominante, incluidas las fechas imposibles (p. ej. `31/02/2026`).
 
-**Regla de duplicidad:** se considera duplicada una fila cuyos valores, después de quitar espacios al inicio y final, son idénticos a los de una fila previa, respetando mayúsculas/minúsculas. El primer registro no se marca como duplicado. Las filas enteramente en blanco se omiten.
+**Regla de duplicidad:** se considera duplicada una fila cuyos valores, después de quitar espacios al inicio y final, son idénticos a los de una fila previa, respetando mayúsculas/minúsculas. El primer registro no se marca como duplicado. Las líneas físicamente en blanco se omiten; en cambio, una fila con delimitadores y todas sus celdas vacías (por ejemplo `,,`) cuenta como un registro incompleto más, igual que en cualquier lector CSV.
 
 ## 5. Tecnologías y estructura
 
