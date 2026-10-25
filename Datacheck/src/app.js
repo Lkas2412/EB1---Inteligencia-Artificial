@@ -7,6 +7,7 @@ let result = null;
 let currentFilename = '';
 let currentEncoding = 'utf-8';
 let schema = null;
+let schemaNotice = '';
 let schemaRowRefs = [];
 let diffOther = null;
 let lastDiff = null;
@@ -550,7 +551,8 @@ function applySchemaValidation() {
     result.rows.forEach(row => { row.schemaViolation = false; });
     for (const ref of schemaRowRefs) { ref.resultCell.textContent = '—'; ref.resultCell.classList.remove('ok'); }
     if (filterBtn) filterBtn.hidden = true;
-    if (summary) { summary.hidden = false; summary.textContent = 'Todavía no definiste reglas: completa al menos una fila (o pulsa «Generar desde este archivo») y vuelve a validar.'; }
+    if (summary) { summary.hidden = false; summary.textContent = schemaNotice || 'Todavía no definiste reglas: completa al menos una fila (o pulsa «Generar desde este archivo») y vuelve a validar.'; }
+    schemaNotice = '';
     if (activeFilter === 'schema') setFilter('all'); else renderPreview();
     return;
   }
@@ -580,6 +582,12 @@ const schemaGenerateBtn = $('#schemaGenerate');
 if (schemaGenerateBtn) schemaGenerateBtn.addEventListener('click', () => {
   if (!result) return;
   schema = generateSchema(result);
+  // Un archivo muy sucio puede no admitir NINGUNA regla segura (todas
+  // las columnas tienen vacíos, repetidos o tipos mezclados): hay que
+  // decirlo así, no con el mensaje genérico de «no definiste reglas».
+  if (!Object.keys(schema.columns).length) {
+    schemaNotice = 'No se pudo generar ninguna regla segura desde este archivo: cada columna tiene vacíos, pseudo-vacíos, valores repetidos o tipos mezclados. Define las reglas a mano en la tabla.';
+  }
   buildSchemaEditor();
   applySchemaValidation();
 });
